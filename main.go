@@ -5,51 +5,37 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
-	"os/exec"
 
-	"github.com/songgao/water"
 	"golang.org/x/net/ipv4"
 )
 
-func configureInterface(args ...string) {
-	cmd := exec.Command("/sbin/ip", args...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.Stdin = os.Stdin
-	err := cmd.Run()
-	if nil != err {
-		log.Fatalln("Error configuring ip:", err)
-	}
-}
-
 func main() {
-	local := flag.String("local", " ", "Local IP address")
 	remote := flag.String("remote", " ", "Remote IP address")
 	flag.Parse()
-	ifce, err := water.New(water.Config{
-		DeviceType: water.TUN,
-	})
+
+	server, err := NewServer("10.2.0.2/24")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 
-	log.Printf("Interface Name: %s\n", ifce.Name())
-	configureInterface("link", "set", "dev", ifce.Name(), "mtu", "1300")
-	configureInterface("addr", "add", *local, "dev", ifce.Name(), "peer", *remote)
-	configureInterface("link", "set", "dev", ifce.Name(), "up")
+	fmt.Printf("Private IP is %s \n", server.tunInterface.ip)
+	log.Printf("Interface Name: %s\n", server.tunInterface.ifce.Name())
+	log.Printf("Network ubnet is: %s\n", server.network.String())
 
 	remoteAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%v", *remote, 4321))
 	if nil != err {
-		log.Fatalln("Unable to listen on UDP socket:", err)
+		log.Fatalln("Unable to listen on UDP socket")
 	}
 
 	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", 4321))
+
 	lstnConn, err := net.ListenUDP("udp", lstnAddr)
 	if nil != err {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
 	defer lstnConn.Close()
+
+	ifce := server.tunInterface.ifce
 
 	//recieve packets
 	go func() {
@@ -83,7 +69,8 @@ func main() {
 			}
 			fmt.Printf("Sending %d bytes to %s \n", n, header.Dst)
 			//Send to remote tunnel
-			lstnConn.WriteToUDP(packet[:n], remoteAddr)
+			//lstnConn.WriteToUDP(packet[:n], remoteAddr)
+			lstnConn.WriteTo(packet[:n], remoteAddr)
 		}
 	}
 }
