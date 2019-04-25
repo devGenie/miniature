@@ -6,12 +6,11 @@ import (
 	"strings"
 )
 
-type Server struct {
-	ip               string
-	virtualInterface string
+type ServerConfig struct {
+	address string
 }
 
-type Client struct {
+type ClientConfig struct {
 	server string
 }
 
