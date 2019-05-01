@@ -2,6 +2,7 @@ FROM golang:1.10.2-alpine
 RUN apk update
 RUN apk upgrade
 RUN apk add git
+RUN apk add vim
 RUN mkdir /vpn
 COPY . /vpn
 WORKDIR /vpn
