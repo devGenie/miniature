@@ -13,7 +13,7 @@ const (
 	CLIENT_CONFIGURATION byte = 0x03
 	SESSION_ACCEPTED     byte = 0x04
 	HEARTBEAT            byte = 0x05
-	SESSION              byte = 0x4
+	SESSION              byte = 0x06
 )
 
 type Addr struct {
@@ -32,10 +32,19 @@ type Packet struct {
 	Payload []byte
 }
 
-type Encoded interface {
+type ToEncode interface {
 }
 
-func decode(dataStructure Encoded, data []byte) error {
+type TCP struct {
+	Tcp_src     string
+	Tcp_dst     string
+	Tcp_seq_num int
+	Tcp_ack_num int
+	Tcp_hdr_len int
+	Tcp_fin     []byte
+}
+
+func decode(dataStructure ToEncode, data []byte) error {
 	buffer := bytes.NewBuffer(data)
 	decoder := gob.NewDecoder(buffer)
 	err := decoder.Decode(dataStructure)
@@ -48,7 +57,7 @@ func decode(dataStructure Encoded, data []byte) error {
 	return nil
 }
 
-func encode(dataStructure Encoded) (encoded []byte, err error) {
+func encode(dataStructure ToEncode) (encoded []byte, err error) {
 	var buffer bytes.Buffer
 	encoder := gob.NewEncoder(&buffer)
 	err = encoder.Encode(dataStructure)
