@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
+	"sync"
 	"time"
 
 	"golang.org/x/net/ipv4"
@@ -24,36 +26,56 @@ type Server struct {
 	connectionPool map[string]*Peer
 }
 
-func NewServer(address string) (*Server, error) {
+func NewServer(address string) {
 	ifce, err := newInterface()
 	if err != nil {
 		log.Print("Failed to create interface")
-		return nil, err
+		return
 	}
 
 	ip, network, err := net.ParseCIDR(address)
 	if err != nil {
 		log.Print("Failed to create interface")
-		return nil, err
+		return
 	}
 
 	err = ifce.Configure(&ip, &ip, "1400")
 	if err != nil {
 		log.Printf("Error: %s \n", err)
-		return nil, err
+		return
 	}
+
+	// route client traffic through tun interface
+	command := fmt.Sprintf("route add %s dev %s", network.String(), ifce.ifce.Name())
+	RunCommand("ip", command)
+
+	gatewayIfce, _, err := getDefaultGateway()
+
+	command = fmt.Sprintf("-A FORWARD -i %s -o %s -m state --state RELATED,ESTABLISHED -j ACCEPT", ifce.ifce.Name(), gatewayIfce)
+	RunCommand("iptables", command)
+
+	command = fmt.Sprintf("-A FORWARD -i %s -o %s -j ACCEPT", gatewayIfce, ifce.ifce.Name())
+	RunCommand("iptables", command)
+
+	command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j MASQUERADE", gatewayIfce)
+	RunCommand("iptables", command)
 
 	server := new(Server)
 	server.tunInterface = ifce
 	server.network = network
 	server.connectionPool = make(map[string]*Peer)
+
+	var waiter sync.WaitGroup
+	waiter.Add(2)
 	server.createIPPool()
-	server.listenAndServe()
-	return server, nil
+	go server.listenAndServe(&waiter)
+	go server.readIfce(&waiter)
+
+	waiter.Wait()
 }
 
-func (server *Server) listenAndServe() {
-
+func (server *Server) listenAndServe(waiter *sync.WaitGroup) {
+	defer waiter.Done()
 	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", 4321))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
@@ -76,12 +98,13 @@ func (server *Server) listenAndServe() {
 			continue
 		}
 
-		header, err := ipv4.ParseHeader(inputBytes[:length])
-		if err != nil {
-			fmt.Println("Error: ", err)
-			continue
-		}
-		fmt.Printf("Received %d bytes from %v: %+v\n", length, addr, header)
+		// header, err := ipv4.ParseHeader(inputBytes[:length])
+
+		// if err != nil {
+		// 	fmt.Println("Error: ", err)
+		// 	continue
+		// }
+		fmt.Printf("Received %d bytes from %v \n", length, addr)
 
 		err = decode(packet, inputBytes[:length])
 
@@ -101,7 +124,7 @@ func (server *Server) listenAndServe() {
 		case HEARTBEAT:
 			server.handleHeartbeat(addr)
 		case SESSION:
-			server.handleConnection(packet, addr)
+			server.handleConnection(packet.Payload)
 		default:
 			fmt.Println("Expected headers not found")
 		}
@@ -110,9 +133,18 @@ func (server *Server) listenAndServe() {
 	}
 }
 
-func (server *Server) handleConnection(packet *Packet, addr *net.UDPAddr) {
-	fmt.Println("Handling connection")
-	server.socket.WriteTo(packet.Payload, addr)
+func (server *Server) handleConnection(packet []byte) {
+	header, err := ipv4.ParseHeader(packet)
+
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return
+	}
+
+	fmt.Printf("Writting %d bytes from %v to %v \n", header.Len, header.Src, header.Dst)
+
+	server.tunInterface.ifce.Write(packet)
+	//server.socket.WriteTo(packet.Payload, addr)
 }
 
 func (server *Server) handleHandshake(addr *net.UDPAddr) {
@@ -195,9 +227,8 @@ func (server *Server) getAvailableIP() (ip string) {
 		addr := server.ipPool[0]
 		server.ipPool = server.ipPool[1:len(server.ipPool)]
 		return addr
-	} else {
-		return " "
 	}
+	return " "
 }
 
 func (server *Server) createIPPool() int {
@@ -227,4 +258,47 @@ func constructIP(ip net.IP) {
 			break
 		}
 	}
+}
+
+func (server *Server) readIfce(waiter *sync.WaitGroup) {
+	defer waiter.Done()
+	fmt.Println("Handling outgoing connection")
+	mtu := server.tunInterface.mtu
+	packetSize, err := strconv.Atoi(mtu)
+
+	if err != nil {
+		fmt.Printf("Error converting string to integer %s", err)
+	}
+
+	packetSize = packetSize - 400
+	buffer := make([]byte, packetSize)
+	for {
+		length, err := server.tunInterface.ifce.Read(buffer)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		if length > -4 {
+			header, err := ipv4.ParseHeader(buffer[:length])
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			packetHeader := PacketHeader{Flag: SESSION}
+			sendPacket := Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
+			encodedPacket, err := encode(sendPacket)
+
+			if err != nil {
+				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
+				return
+			}
+			fmt.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+			peer := server.connectionPool[header.Dst.String()]
+			fmt.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
+
+			server.socket.WriteToUDP(encodedPacket, peer.Addr)
+		}
+	}
+	fmt.Println("Finished")
 }

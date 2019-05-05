@@ -2,8 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"log"
 )
 
 func main() {
@@ -12,14 +10,8 @@ func main() {
 	flag.Parse()
 
 	if *server_type == "server" {
-		server, err := NewServer("10.2.0.2/24")
-		if err != nil {
-			log.Fatalln(err)
-		}
+		NewServer("10.2.0.2/24")
 
-		fmt.Printf("Private IP is %s \n", server.tunInterface.ip)
-		log.Printf("Interface Name: %s\n", server.tunInterface.ifce.Name())
-		log.Printf("Network ubnet is: %s\n", server.network.String())
 	} else {
 		NewClient(*remote)
 	}
