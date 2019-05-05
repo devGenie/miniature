@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bufio"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strings"
 
 	"github.com/songgao/water"
 )
@@ -55,4 +59,38 @@ func (tun *Tun) Configure(ifceAddr *net.IP, remote *net.IP, mtu string) error {
 	}
 	tun.ip = ifceAddr
 	return nil
+}
+
+func getDefaultGateway() (ifaceName string, gateway string, err error) {
+	routeFile, err := os.Open("/proc/net/route")
+	if err != nil {
+		log.Println("Error reading /proc/net/route")
+		return "", "", err
+	}
+	defer routeFile.Close()
+
+	scanner := bufio.NewScanner(routeFile)
+
+	lastline := 0
+	for scanner.Scan() {
+		lastline++
+		if lastline == 2 {
+			currentLine := scanner.Text()
+			splitEntries := strings.Split(currentLine, "\t")
+			ifaceName = splitEntries[0]
+			gateway = splitEntries[2]
+			break
+		}
+	}
+
+	// reverse gateway address
+	decodedGateway, err := hex.DecodeString(gateway)
+
+	if len(decodedGateway) != net.IPv4len {
+		log.Println("Error : This is not a valid IP address")
+		return "", "", fmt.Errorf("Invalid IPv4 address")
+	}
+	ipAddr := net.IP([]byte{decodedGateway[3], decodedGateway[2], decodedGateway[1], decodedGateway[0]})
+	gateway = ipAddr.String()
+	return ifaceName, gateway, nil
 }

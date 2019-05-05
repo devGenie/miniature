@@ -49,6 +49,7 @@ func (client *Client) listen(server string, port string) {
 }
 
 func (client *Client) greetServer() {
+	fmt.Println("Greeting server")
 	packetHeader := PacketHeader{Flag: HANDSHAKE}
 	packet := Packet{PacketHeader: packetHeader, Payload: make([]byte, 0)}
 
@@ -82,6 +83,7 @@ func (client *Client) handleServerGreeting(packet []byte) {
 	if err != nil {
 		log.Printf("Error: %s \n", err)
 	}
+
 	fmt.Println("Client has been assigned ", ipAddr.IpAddr)
 	fmt.Println("Sending reply to server")
 	client.ifce = ifce
@@ -136,20 +138,39 @@ func (client *Client) handleIncomingConnections(waiter *sync.WaitGroup, sessionS
 		case HANDSHAKE_ACCEPTED:
 			client.handleServerGreeting(packet.Payload)
 		case SESSION_ACCEPTED:
-			//client.handleOutgoingConnections()
 			fmt.Printf("Starting session, MTU of link is %s \n", client.ifce.mtu)
+
+			command := "route delete 0.0.0.0/0"
+			err := RunCommand("ip", command)
+			if err != nil {
+				log.Printf("Error cdeleting route message: %s \n", err)
+			}
+
+			command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", client.ifce.ip.String(), client.ifce.ifce.Name())
+			err = RunCommand("ip", command)
+			if err != nil {
+				log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
+			}
+
 			sessionStart <- client.ifce.mtu
+		case SESSION:
+			client.writeToIfce(packet.Payload)
 		default:
 			fmt.Println("Expected headers not found")
 		}
 	}
 }
 
+func (client *Client) writeToIfce(packet []byte) {
+	client.ifce.ifce.Write(packet)
+}
+
 func (client *Client) handleOutgoingConnections(waiter *sync.WaitGroup, sessionStart chan string) {
 	defer waiter.Done()
-	fmt.Println("Handling outgoing connection")
+
 	mtu := <-sessionStart
 	packetSize, err := strconv.Atoi(mtu)
+	fmt.Println("Handling outgoing connection")
 
 	if err != nil {
 		fmt.Printf("Error converting string to integer %s", err)
@@ -178,7 +199,9 @@ func (client *Client) handleOutgoingConnections(waiter *sync.WaitGroup, sessionS
 				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
 				return
 			}
-			fmt.Printf("Sending %d bytes to %s \n", header.Len, header.Dst)
+			fmt.Printf("Sending %d bytes to %s \n", len(encodedPacket), header.Dst)
+			fmt.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+
 			client.conn.Write(encodedPacket)
 		}
 	}
