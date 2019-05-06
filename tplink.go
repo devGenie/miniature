@@ -17,9 +17,9 @@ const (
 )
 
 type Addr struct {
-	IpAddr  *net.IP
-	Network *net.IPNet
-	Gateway *net.IP
+	IpAddr  net.IP
+	Network net.IPNet
+	Gateway net.IP
 }
 
 type PacketHeader struct {
@@ -32,9 +32,6 @@ type Packet struct {
 	Payload []byte
 }
 
-type ToEncode interface {
-}
-
 type TCP struct {
 	Tcp_src     string
 	Tcp_dst     string
@@ -44,7 +41,7 @@ type TCP struct {
 	Tcp_fin     []byte
 }
 
-func decode(dataStructure ToEncode, data []byte) error {
+func decode(dataStructure interface{}, data []byte) error {
 	buffer := bytes.NewBuffer(data)
 	decoder := gob.NewDecoder(buffer)
 	err := decoder.Decode(dataStructure)
@@ -57,7 +54,7 @@ func decode(dataStructure ToEncode, data []byte) error {
 	return nil
 }
 
-func encode(dataStructure ToEncode) (encoded []byte, err error) {
+func encode(dataStructure interface{}) (encoded []byte, err error) {
 	var buffer bytes.Buffer
 	encoder := gob.NewEncoder(&buffer)
 	err = encoder.Encode(dataStructure)

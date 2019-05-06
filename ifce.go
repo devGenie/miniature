@@ -15,9 +15,9 @@ import (
 type Tun struct {
 	ifce       *water.Interface
 	name       string
-	ip         *net.IP
-	remote     *net.IP
-	subnetMask *net.IPMask
+	ip         net.IP
+	remote     net.IP
+	subnetMask net.IPMask
 	mtu        string
 }
 
@@ -30,11 +30,12 @@ func newInterface() (*Tun, error) {
 	if err != nil {
 		return nil, err
 	}
-	ifce := Tun{ifce: tunInterface}
-	return &ifce, nil
+	ifce := new(Tun)
+	ifce.ifce = tunInterface
+	return ifce, nil
 }
 
-func (tun *Tun) Configure(ifceAddr *net.IP, remote *net.IP, mtu string) error {
+func (tun *Tun) Configure(ifceAddr net.IP, remote net.IP, mtu string) error {
 	ipaddr := ifceAddr.String()
 	command := fmt.Sprintf("link set dev %s mtu %s", tun.ifce.Name(), mtu)
 	err := RunCommand("ip", command)

@@ -23,7 +23,8 @@ type Server struct {
 	network        *net.IPNet
 	socket         *net.UDPConn
 	ipPool         []string
-	connectionPool map[string]*Peer
+	connectionPool map[string]Peer
+	waiter         sync.WaitGroup
 }
 
 func NewServer(address string) {
@@ -39,7 +40,7 @@ func NewServer(address string) {
 		return
 	}
 
-	err = ifce.Configure(&ip, &ip, "1400")
+	err = ifce.Configure(ip, ip, "1400")
 	if err != nil {
 		log.Printf("Error: %s \n", err)
 		return
@@ -63,19 +64,18 @@ func NewServer(address string) {
 	server := new(Server)
 	server.tunInterface = ifce
 	server.network = network
-	server.connectionPool = make(map[string]*Peer)
+	server.connectionPool = make(map[string]Peer)
 
-	var waiter sync.WaitGroup
-	waiter.Add(2)
+	server.waiter.Add(2)
 	server.createIPPool()
-	go server.listenAndServe(&waiter)
-	go server.readIfce(&waiter)
+	go server.listenAndServe()
+	go server.readIfce()
 
-	waiter.Wait()
+	server.waiter.Wait()
 }
 
-func (server *Server) listenAndServe(waiter *sync.WaitGroup) {
-	defer waiter.Done()
+func (server *Server) listenAndServe() {
+	defer server.waiter.Done()
 	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", 4321))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
@@ -98,12 +98,6 @@ func (server *Server) listenAndServe(waiter *sync.WaitGroup) {
 			continue
 		}
 
-		// header, err := ipv4.ParseHeader(inputBytes[:length])
-
-		// if err != nil {
-		// 	fmt.Println("Error: ", err)
-		// 	continue
-		// }
 		fmt.Printf("Received %d bytes from %v \n", length, addr)
 
 		err = decode(packet, inputBytes[:length])
@@ -134,17 +128,7 @@ func (server *Server) listenAndServe(waiter *sync.WaitGroup) {
 }
 
 func (server *Server) handleConnection(packet []byte) {
-	header, err := ipv4.ParseHeader(packet)
-
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return
-	}
-
-	fmt.Printf("Writting %d bytes from %v to %v \n", header.Len, header.Src, header.Dst)
-
 	server.tunInterface.ifce.Write(packet)
-	//server.socket.WriteTo(packet.Payload, addr)
 }
 
 func (server *Server) handleHandshake(addr *net.UDPAddr) {
@@ -159,7 +143,7 @@ func (server *Server) handleHandshake(addr *net.UDPAddr) {
 	packet := new(Packet)
 	packet.PacketHeader = PacketHeader{Flag: HANDSHAKE_ACCEPTED}
 
-	ip := Addr{IpAddr: &clientIPv4, Network: server.network, Gateway: server.tunInterface.ip}
+	ip := Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.ip}
 
 	encodedIP, err := encode(&ip)
 
@@ -194,7 +178,7 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 
 	fmt.Printf("Registering client with mac address %s \n", peer.IP)
 	peer.Addr = addr
-	server.connectionPool[peer.IP] = peer
+	server.connectionPool[peer.IP] = *peer
 
 	packet := new(Packet)
 	packet.PacketHeader = PacketHeader{Flag: SESSION_ACCEPTED}
@@ -208,7 +192,12 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 	}
 
 	fmt.Printf("Sending session accepted response to peer at %s \n", addr)
-	server.socket.WriteTo(encodedPacket, addr)
+	writes, err := server.socket.WriteTo(encodedPacket, addr)
+
+	if err != nil {
+		log.Printf("Error writting bytes to socket, error : %s \n", err)
+	}
+	fmt.Printf("Written %v bytes to UDP socket \n", writes)
 	fmt.Printf("Total number of connections : %v \n", len(server.connectionPool))
 	fmt.Printf("IP  addesses remaining in pool : %v \n", len(server.ipPool))
 
@@ -216,10 +205,6 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 
 func (server *Server) handleHeartbeat(add *net.UDPAddr) {
 	fmt.Println("Handling heartbeat")
-}
-
-func (server *Server) routePackets() {
-
 }
 
 func (server *Server) getAvailableIP() (ip string) {
@@ -232,7 +217,6 @@ func (server *Server) getAvailableIP() (ip string) {
 }
 
 func (server *Server) createIPPool() int {
-	//ss := make([][]net.IP, 0)
 	fmt.Printf("The CIDR of this network is %s \n", server.network.String())
 	fmt.Printf("Generating IP address for %s network space \n", server.network)
 
@@ -260,8 +244,8 @@ func constructIP(ip net.IP) {
 	}
 }
 
-func (server *Server) readIfce(waiter *sync.WaitGroup) {
-	defer waiter.Done()
+func (server *Server) readIfce() {
+	defer server.waiter.Done()
 	fmt.Println("Handling outgoing connection")
 	mtu := server.tunInterface.mtu
 	packetSize, err := strconv.Atoi(mtu)
@@ -300,5 +284,4 @@ func (server *Server) readIfce(waiter *sync.WaitGroup) {
 			server.socket.WriteToUDP(encodedPacket, peer.Addr)
 		}
 	}
-	fmt.Println("Finished")
 }
