@@ -11,8 +11,10 @@ import (
 )
 
 type Client struct {
-	ifce *Tun
-	conn *net.UDPConn
+	ifce        *Tun
+	conn        *net.UDPConn
+	waiter      sync.WaitGroup
+	sessionChan chan string
 }
 
 func NewClient(server string) {
@@ -25,14 +27,13 @@ func NewClient(server string) {
 	client.listen(server, "4321")
 	defer client.conn.Close()
 	//incoming := make(chan []byte)
-	sessionStart := make(chan string)
-	var waiter sync.WaitGroup
-	waiter.Add(2)
-	go client.handleIncomingConnections(&waiter, sessionStart)
-	go client.handleOutgoingConnections(&waiter, sessionStart)
+	client.sessionChan = make(chan string)
+	client.waiter.Add(2)
+	go client.handleIncomingConnections()
+	go client.handleOutgoingConnections()
 	client.greetServer()
 
-	waiter.Wait()
+	client.waiter.Wait()
 }
 
 func (client *Client) listen(server string, port string) {
@@ -113,8 +114,8 @@ func (client *Client) handleServerGreeting(packet []byte) {
 
 }
 
-func (client *Client) handleIncomingConnections(waiter *sync.WaitGroup, sessionStart chan string) {
-	defer waiter.Done()
+func (client *Client) handleIncomingConnections() {
+	defer client.waiter.Done()
 	inputBytes := make([]byte, 2048)
 	packet := new(Packet)
 
@@ -152,7 +153,7 @@ func (client *Client) handleIncomingConnections(waiter *sync.WaitGroup, sessionS
 				log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
 			}
 
-			sessionStart <- client.ifce.mtu
+			client.sessionChan <- client.ifce.mtu
 		case SESSION:
 			client.writeToIfce(packet.Payload)
 		default:
@@ -165,10 +166,10 @@ func (client *Client) writeToIfce(packet []byte) {
 	client.ifce.ifce.Write(packet)
 }
 
-func (client *Client) handleOutgoingConnections(waiter *sync.WaitGroup, sessionStart chan string) {
-	defer waiter.Done()
+func (client *Client) handleOutgoingConnections() {
+	defer client.waiter.Done()
 
-	mtu := <-sessionStart
+	mtu := <-client.sessionChan
 	packetSize, err := strconv.Atoi(mtu)
 	fmt.Println("Handling outgoing connection")
 
