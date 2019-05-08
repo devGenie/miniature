@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/robfig/cron"
 	"golang.org/x/net/ipv4"
 )
 
@@ -90,7 +91,6 @@ func (client *Client) handleServerGreeting(packet []byte) {
 	client.ifce = ifce
 
 	peer := new(Peer)
-	peer.MacAddress = "randomMacAddress"
 	peer.IP = ifce.ip.String()
 
 	encodedPeer, err := encode(&peer)
@@ -154,6 +154,7 @@ func (client *Client) handleIncomingConnections() {
 			}
 
 			client.sessionChan <- client.ifce.mtu
+			client.StartHeartBeat()
 		case SESSION:
 			client.writeToIfce(packet.Payload)
 		default:
@@ -206,4 +207,42 @@ func (client *Client) handleOutgoingConnections() {
 			client.conn.Write(encodedPacket)
 		}
 	}
+}
+
+func (client *Client) StartHeartBeat() {
+	cronjob := cron.New()
+	err := cronjob.AddFunc("0 0/1 * * * *", client.HeartBeat)
+	if err != nil {
+		log.Printf("An error occured while setting up heartbeat : \n", err)
+		return
+	}
+	fmt.Println("Starting hearbeat")
+	cronjob.Start()
+
+	entry := cronjob.Entries()
+	fmt.Printf("Cron scheduled to run on %s \n", entry[0].Next)
+}
+
+func (client *Client) HeartBeat() {
+
+	peer := new(Peer)
+	peer.IP = client.ifce.ip.String()
+
+	encodedPeer, err := encode(&peer)
+
+	if err != nil {
+		log.Printf("An error occured while encording peer data \t Error : %s \n", err)
+		return
+	}
+	packetHeader := PacketHeader{Flag: HEARTBEAT}
+	sendPacket := Packet{PacketHeader: packetHeader, Payload: encodedPeer}
+	encodedPacket, err := encode(sendPacket)
+
+	if err != nil {
+		log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
+		return
+	}
+	serverAddress := client.conn.RemoteAddr()
+	fmt.Printf("Sending pulse to server at %s \n", serverAddress.String())
+	client.conn.Write(encodedPacket)
 }

@@ -14,7 +14,6 @@ import (
 type Peer struct {
 	IP            string
 	Addr          *net.UDPAddr
-	MacAddress    string
 	LastHeartbeat time.Time
 }
 
@@ -23,7 +22,7 @@ type Server struct {
 	network        *net.IPNet
 	socket         *net.UDPConn
 	ipPool         []string
-	connectionPool map[string]Peer
+	connectionPool map[string]*Peer
 	waiter         sync.WaitGroup
 }
 
@@ -64,7 +63,7 @@ func NewServer(address string) {
 	server := new(Server)
 	server.tunInterface = ifce
 	server.network = network
-	server.connectionPool = make(map[string]Peer)
+	server.connectionPool = make(map[string]*Peer)
 
 	server.waiter.Add(2)
 	server.createIPPool()
@@ -116,7 +115,7 @@ func (server *Server) listenAndServe() {
 		case CLIENT_CONFIGURATION:
 			server.registerClient(addr, packet.Payload)
 		case HEARTBEAT:
-			server.handleHeartbeat(addr)
+			server.handleHeartbeat(packet.Payload)
 		case SESSION:
 			server.handleConnection(packet.Payload)
 		default:
@@ -176,9 +175,9 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 		return
 	}
 
-	fmt.Printf("Registering client with mac address %s \n", peer.IP)
+	fmt.Printf("Registering client with IP address %s \n", peer.IP)
 	peer.Addr = addr
-	server.connectionPool[peer.IP] = *peer
+	server.connectionPool[peer.IP] = peer
 
 	packet := new(Packet)
 	packet.PacketHeader = PacketHeader{Flag: SESSION_ACCEPTED}
@@ -203,8 +202,18 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 
 }
 
-func (server *Server) handleHeartbeat(add *net.UDPAddr) {
-	fmt.Println("Handling heartbeat")
+func (server *Server) handleHeartbeat(packet []byte) {
+	peer := new(Peer)
+	err := decode(peer, packet)
+	if err != nil {
+		fmt.Println("Error decoding peer data", err)
+	}
+	oldPeer := server.connectionPool[peer.IP]
+	peer.LastHeartbeat = time.Now()
+	peer.Addr = oldPeer.Addr
+	server.connectionPool[peer.IP] = peer
+
+	fmt.Println("Recieved heartbeat from peer at ", peer.IP)
 }
 
 func (server *Server) getAvailableIP() (ip string) {
