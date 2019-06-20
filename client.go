@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/robfig/cron"
 	"golang.org/x/net/ipv4"
 )
 
@@ -76,7 +75,6 @@ func (client *Client) handleServerGreeting(packet []byte) {
 
 	ipAddr := new(Addr)
 	err = decode(ipAddr, packet)
-
 	if err != nil {
 		log.Printf("An error occurred trying to decode data from the server \t Error: %s \n", err)
 		return
@@ -92,9 +90,7 @@ func (client *Client) handleServerGreeting(packet []byte) {
 
 	peer := new(Peer)
 	peer.IP = ifce.ip.String()
-
 	encodedPeer, err := encode(&peer)
-
 	if err != nil {
 		log.Printf("An error occured while encording peer data \t Error : %s \n", err)
 		return
@@ -111,11 +107,11 @@ func (client *Client) handleServerGreeting(packet []byte) {
 	}
 
 	client.conn.Write(encodedPacket)
-
 }
 
 func (client *Client) handleIncomingConnections() {
 	defer client.waiter.Done()
+
 	inputBytes := make([]byte, 2048)
 	packet := new(Packet)
 
@@ -132,6 +128,7 @@ func (client *Client) handleIncomingConnections() {
 			log.Printf("Error decoding data from the server \t Error : %s \n", err)
 			continue
 		}
+
 		packetHeader := packet.PacketHeader
 		headerFlag := packetHeader.Flag
 
@@ -173,7 +170,6 @@ func (client *Client) handleOutgoingConnections() {
 	mtu := <-client.sessionChan
 	packetSize, err := strconv.Atoi(mtu)
 	fmt.Println("Handling outgoing connection")
-
 	if err != nil {
 		fmt.Printf("Error converting string to integer %s", err)
 	}
@@ -193,14 +189,15 @@ func (client *Client) handleOutgoingConnections() {
 				fmt.Println(err)
 				continue
 			}
+
 			packetHeader := PacketHeader{Flag: SESSION}
 			sendPacket := Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
 			encodedPacket, err := encode(sendPacket)
-
 			if err != nil {
 				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
 				return
 			}
+
 			fmt.Printf("Sending %d bytes to %s \n", len(encodedPacket), header.Dst)
 			fmt.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 
@@ -210,38 +207,26 @@ func (client *Client) handleOutgoingConnections() {
 }
 
 func (client *Client) StartHeartBeat() {
-	cronjob := cron.New()
-	err := cronjob.AddFunc("0 0/1 * * * *", client.HeartBeat)
-	if err != nil {
-		log.Printf("An error occured while setting up heartbeat : \n", err)
-		return
-	}
-	fmt.Println("Starting hearbeat")
-	cronjob.Start()
-
-	entry := cronjob.Entries()
-	fmt.Printf("Cron scheduled to run on %s \n", entry[0].Next)
+	RunCron("Heartbeat", "0 0/1 * * * *", client.HeartBeat)
 }
 
 func (client *Client) HeartBeat() {
-
 	peer := new(Peer)
 	peer.IP = client.ifce.ip.String()
-
 	encodedPeer, err := encode(&peer)
-
 	if err != nil {
 		log.Printf("An error occured while encording peer data \t Error : %s \n", err)
 		return
 	}
+
 	packetHeader := PacketHeader{Flag: HEARTBEAT}
 	sendPacket := Packet{PacketHeader: packetHeader, Payload: encodedPeer}
 	encodedPacket, err := encode(sendPacket)
-
 	if err != nil {
 		log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
 		return
 	}
+
 	serverAddress := client.conn.RemoteAddr()
 	fmt.Printf("Sending pulse to server at %s \n", serverAddress.String())
 	client.conn.Write(encodedPacket)
