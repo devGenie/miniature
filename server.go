@@ -70,6 +70,7 @@ func NewServer(address string) {
 	go server.listenAndServe()
 	go server.readIfce()
 
+	server.watchConnections()
 	server.waiter.Wait()
 }
 
@@ -291,6 +292,23 @@ func (server *Server) readIfce() {
 			fmt.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
 
 			server.socket.WriteToUDP(encodedPacket, peer.Addr)
+		}
+	}
+}
+
+func (server *Server) watchConnections() {
+	RunCron("Cleaner", "0 0/5 * * * *", server.cleanupDeadConnections)
+}
+
+func (server *Server) cleanupDeadConnections() {
+	for k, v := range server.connectionPool {
+		currentTime := time.Now()
+		timeDifference := currentTime.Sub(v.LastHeartbeat)
+		elapsedMinutes := timeDifference.Minutes()
+		if elapsedMinutes > 5.00 {
+			fmt.Printf("Removing %s because the hearbeat has been quiet for %d minutes \n", k, elapsedMinutes)
+			delete(server.connectionPool, k)
+			fmt.Println(len(server.connectionPool))
 		}
 	}
 }
