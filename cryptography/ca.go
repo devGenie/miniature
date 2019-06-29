@@ -3,16 +3,17 @@ package cryptography
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
+	mathrand "math/rand"
 	"time"
 )
-
-const CERTUSAGES = x509.KeyUsageDigitalSignature
 
 type Cert struct {
 	IsCA               bool
@@ -27,11 +28,15 @@ type Cert struct {
 	ExpiryDate         string
 }
 
-func (cert *Cert) GenerateTemplate() (certificateTemplate *x509.Certificate) {
+func (cert *Cert) generateTemplate(privateKey *rsa.PrivateKey) (certificateTemplate *x509.Certificate) {
+	mathrand.Seed(time.Now().UnixNano())
+	randomInteger := mathrand.Intn(math.MaxInt64)
+	randomInteger64 := int64(randomInteger)
+	subjectKeyID := HashBigInt(privateKey.N)
 	template := &x509.Certificate{
 		IsCA:         cert.IsCA,
-		SubjectKeyId: []byte{1, 2, 3, 7},
-		SerialNumber: big.NewInt(1234),
+		SubjectKeyId: subjectKeyID,
+		SerialNumber: big.NewInt(randomInteger64),
 		Subject: pkix.Name{
 			Country:            []string{cert.Country},
 			Organization:       []string{cert.Organization},
@@ -52,42 +57,43 @@ func (cert *Cert) GenerateTemplate() (certificateTemplate *x509.Certificate) {
 	return template
 }
 
-func GenerateCA(caTemplate *x509.Certificate) (privatekey *rsa.PrivateKey, publickey *rsa.PublicKey, certificate []byte, err error) {
+func (cert *Cert) GenerateCA() (privatekey *rsa.PrivateKey, publickey *rsa.PublicKey, certificate []byte, err error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		fmt.Println(err)
 	}
 
 	publicKey := &privateKey.PublicKey
-	cert, err := createCert(caTemplate, caTemplate, privateKey, publicKey)
+	caTemplate := cert.generateTemplate(privatekey)
+	caCert, err := cert.generateCert(caTemplate, caTemplate, privateKey, publicKey)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	return privateKey, publicKey, cert, nil
+	return privateKey, publicKey, caCert, nil
 }
 
-func GenerateCertificate(caTemplate *x509.Certificate, parentTemplate *x509.Certificate, caPrivateKey *rsa.PrivateKey) (privatekey *rsa.PrivateKey, publickey *rsa.PublicKey, certificate []byte, err error) {
+func (cert *Cert) GenerateClientCertificate(caTemplate *x509.Certificate, parentTemplate *x509.Certificate, caPrivateKey *rsa.PrivateKey) (privatekey *rsa.PrivateKey, publickey *rsa.PublicKey, certificate []byte, err error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		fmt.Println(err)
 	}
 
 	publicKey := &privateKey.PublicKey
-	cert, err := createCert(caTemplate, parentTemplate, caPrivateKey, publicKey)
+	clientCert, err := cert.generateCert(caTemplate, parentTemplate, caPrivateKey, publicKey)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	return privateKey, publicKey, cert, nil
+	return privateKey, publicKey, clientCert, nil
 }
 
-func createCert(caTemplate *x509.Certificate, parentTemplate *x509.Certificate, privateKey *rsa.PrivateKey, publicKey *rsa.PublicKey) (certificate []byte, err error) {
-	cert, err := x509.CreateCertificate(rand.Reader, caTemplate, parentTemplate, publicKey, privateKey)
+func (cert *Cert) generateCert(caTemplate *x509.Certificate, parentTemplate *x509.Certificate, privateKey *rsa.PrivateKey, publicKey *rsa.PublicKey) (certificate []byte, err error) {
+	certBody, err := x509.CreateCertificate(rand.Reader, caTemplate, parentTemplate, publicKey, privateKey)
 	if err != nil {
 		return nil, err
 	}
-	return cert, nil
+	return certBody, nil
 }
 
 func VerifyCertificate(rootPEM []byte, certPEM []byte) error {
@@ -114,11 +120,16 @@ func VerifyCertificate(rootPEM []byte, certPEM []byte) error {
 		Roots:         roots,
 		Intermediates: x509.NewCertPool(),
 	}
-	fmt.Println(cert.Issuer)
 	_, err = cert.Verify(opts)
 	if err != nil {
 		return errors.New("Failed to verify certificate with error: " + err.Error())
 	}
 
 	return nil
+}
+
+func HashBigInt(bigInt *big.Int) []byte {
+	hash := sha1.New()
+	hash.Write(bigInt.Bytes())
+	return hash.Sum(nil)
 }
