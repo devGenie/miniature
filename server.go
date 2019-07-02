@@ -1,13 +1,18 @@
 package main
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/devgenie/miniature/cryptography"
 	"golang.org/x/net/ipv4"
 )
 
@@ -15,6 +20,8 @@ type Peer struct {
 	IP            string
 	Addr          *net.UDPAddr
 	LastHeartbeat time.Time
+	Cert          []byte
+	PublicKey     *rsa.PublicKey
 }
 
 type Server struct {
@@ -24,6 +31,11 @@ type Server struct {
 	ipPool         []string
 	connectionPool map[string]*Peer
 	waiter         sync.WaitGroup
+}
+
+type ServerConfig struct {
+	CertificatesDirectory string
+	Network               string
 }
 
 func NewServer(address string) {
@@ -65,6 +77,10 @@ func NewServer(address string) {
 	server.network = network
 	server.connectionPool = make(map[string]*Peer)
 
+	err = server.createCertificates()
+	if err != nil {
+		log.Println("Failed to create certificate files")
+	}
 	server.waiter.Add(2)
 	server.createIPPool()
 	go server.listenAndServe()
@@ -72,6 +88,76 @@ func NewServer(address string) {
 
 	server.watchConnections()
 	server.waiter.Wait()
+}
+
+func (server *Server) createCertificates() error {
+	cert := new(cryptography.Cert)
+	cert.IsCA = true
+	cert.Country = "Uganda"
+	cert.Organization = "GenieLabs"
+	cert.CommonName = "GenieLabs"
+
+	privateKey, publicKey, caCert, err := cert.GenerateCA()
+	if err != nil {
+		return err
+	}
+
+	// save server's certificate as a pem encoded crt file
+	certificateFile, err := os.Create("ca.crt")
+	if err != nil {
+		log.Println("Failed to save certificate file")
+		return err
+	}
+
+	certificatePem := &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: caCert,
+	}
+	err = pem.Encode(certificateFile, certificatePem)
+	if err != nil {
+		return err
+	}
+
+	// save public key as pem encoded file
+	publicKeyFile, err := os.Create("publickey.pem")
+	if err != nil {
+		log.Println("failed to save public key")
+		return err
+	}
+
+	publicKeyANS1, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	publicKeyPem := &pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: publicKeyANS1,
+	}
+
+	err = pem.Encode(publicKeyFile, publicKeyPem)
+	if err != nil {
+		log.Println("Failed to save private key")
+		return err
+	}
+
+	// save private key as pem encoded file
+	privateKeyFile, err := os.Create("privatekey.pem")
+	if err != nil {
+		log.Println("Failed to save private key")
+		return err
+	}
+
+	privateKeyPem := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	}
+	err = pem.Encode(privateKeyFile, privateKeyPem)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (server *Server) listenAndServe() {

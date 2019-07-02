@@ -8,7 +8,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	mathrand "math/rand"
@@ -60,11 +59,11 @@ func (cert *Cert) generateTemplate(privateKey *rsa.PrivateKey) (certificateTempl
 func (cert *Cert) GenerateCA() (privatekey *rsa.PrivateKey, publickey *rsa.PublicKey, certificate []byte, err error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		fmt.Println(err)
+		return nil, nil, nil, err
 	}
 
 	publicKey := &privateKey.PublicKey
-	caTemplate := cert.generateTemplate(privatekey)
+	caTemplate := cert.generateTemplate(privateKey)
 	caCert, err := cert.generateCert(caTemplate, caTemplate, privateKey, publicKey)
 	if err != nil {
 		return nil, nil, nil, err
@@ -76,7 +75,7 @@ func (cert *Cert) GenerateCA() (privatekey *rsa.PrivateKey, publickey *rsa.Publi
 func (cert *Cert) GenerateClientCertificate(caTemplate *x509.Certificate, parentTemplate *x509.Certificate, caPrivateKey *rsa.PrivateKey) (privatekey *rsa.PrivateKey, publickey *rsa.PublicKey, certificate []byte, err error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		fmt.Println(err)
+		return nil, nil, nil, err
 	}
 
 	publicKey := &privateKey.PublicKey
