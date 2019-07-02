@@ -77,10 +77,29 @@ func NewServer(address string) {
 	server.network = network
 	server.connectionPool = make(map[string]*Peer)
 
-	err = server.createCertificates()
-	if err != nil {
-		log.Println("Failed to create certificate files")
+	certExists := true
+
+	if _, err := os.Stat("ca.crt"); err != nil {
+		certExists = false
 	}
+
+	if _, err := os.Stat("privatekey.pem"); err != nil {
+		certExists = false
+	}
+
+	if _, err := os.Stat("publickey.pem"); err != nil {
+		certExists = false
+	}
+
+	if !certExists {
+		log.Println("Could not find one or more certificate files, creating fresh ones")
+		err = server.createCertificates()
+		if err != nil {
+			log.Println("Failed to create certificate files")
+			return
+		}
+	}
+
 	server.waiter.Add(2)
 	server.createIPPool()
 	go server.listenAndServe()
@@ -157,6 +176,7 @@ func (server *Server) createCertificates() error {
 		return err
 	}
 
+	log.Println("Successfully created certificate files")
 	return nil
 }
 
