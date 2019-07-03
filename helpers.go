@@ -9,14 +9,6 @@ import (
 	"github.com/robfig/cron"
 )
 
-type ServerConfig struct {
-	address string
-}
-
-type ClientConfig struct {
-	server string
-}
-
 func RunCommand(command, arguments string) error {
 	fmt.Printf("Issuing command: %s %s \n", command, arguments)
 	commandArguments := strings.Split(arguments, " ")
