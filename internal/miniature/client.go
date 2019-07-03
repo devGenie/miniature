@@ -1,4 +1,4 @@
-package main
+package miniature
 
 import (
 	"fmt"
@@ -15,6 +15,13 @@ type Client struct {
 	conn        *net.UDPConn
 	waiter      sync.WaitGroup
 	sessionChan chan string
+}
+
+type ClientConfig struct {
+	ServerAddress string
+	ListeningPort int
+	Certificate   string
+	PrivateKey    string
 }
 
 func NewClient(server string) {
