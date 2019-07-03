@@ -1,7 +1,9 @@
-package main
+package miniature
 
 import (
+	"bufio"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/devgenie/miniature/cryptography"
 	"golang.org/x/net/ipv4"
+	yaml "gopkg.in/yaml.v3"
 )
 
 type Peer struct {
@@ -100,6 +103,8 @@ func NewServer(address string) {
 		}
 	}
 
+	server.CreateClientConfig()
+
 	server.waiter.Add(2)
 	server.createIPPool()
 	go server.listenAndServe()
@@ -178,6 +183,84 @@ func (server *Server) createCertificates() error {
 
 	log.Println("Successfully created certificate files")
 	return nil
+}
+
+func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMessage error) {
+	serverCertificate, err := tls.LoadX509KeyPair("ca.crt", "privatekey.pem")
+	if err != nil {
+		return "", err
+		log.Println(err)
+	}
+
+	ca, err := x509.ParseCertificate(serverCertificate.Certificate[0])
+	if err != nil {
+		return "", err
+	}
+	clientCertTemplate := *ca
+	clientCertTemplate.IsCA = false
+
+	privateKeyFile, err := os.Open("privatekey.pem")
+	if err != nil {
+		return "", err
+	}
+
+	fileInfo, err := privateKeyFile.Stat()
+	if err != nil {
+		return "", err
+	}
+	var filesize int64 = fileInfo.Size()
+	pemBytes := make([]byte, filesize)
+	buffer := bufio.NewReader(privateKeyFile)
+	_, err = buffer.Read(pemBytes)
+	if err != nil {
+		return "", err
+	}
+
+	pemdata, _ := pem.Decode([]byte(pemBytes))
+	privateKeyFile.Close()
+
+	caPrivateKey, err := x509.ParsePKCS1PrivateKey(pemdata.Bytes)
+	if err != nil {
+		return "", err
+	}
+
+	clientCert := new(cryptography.Cert)
+	clientPrivateKey, _, cert, err := clientCert.GenerateClientCertificate(&clientCertTemplate, ca, caPrivateKey)
+	if err != nil {
+		log.Println(err)
+	}
+
+	certpem := &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: cert,
+	}
+	certBytes := pem.EncodeToMemory(certpem)
+
+	privateKeyPem := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(clientPrivateKey),
+	}
+
+	privateKeyBytes := pem.EncodeToMemory(privateKeyPem)
+
+	// get default gateway and add the public IP address to configuration
+	_, gatewayIP, err := getDefaultGateway()
+	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+
+	clientConfig := new(ClientConfig)
+	clientConfig.ServerAddress = gatewayIP
+	clientConfig.ListeningPort = 4321
+	clientConfig.PrivateKey = string(privateKeyBytes)
+	clientConfig.Certificate = string(certBytes)
+
+	configFile, err := yaml.Marshal(clientConfig)
+	if err != nil {
+		return "", err
+	}
+	return string(configFile), nil
 }
 
 func (server *Server) listenAndServe() {
