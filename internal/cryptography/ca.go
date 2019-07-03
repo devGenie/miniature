@@ -27,7 +27,7 @@ type Cert struct {
 	ExpiryDate         string
 }
 
-func (cert *Cert) generateTemplate(privateKey *rsa.PrivateKey) (certificateTemplate *x509.Certificate) {
+func (cert *Cert) GenerateTemplate(privateKey *rsa.PrivateKey) (certificateTemplate *x509.Certificate) {
 	mathrand.Seed(time.Now().UnixNano())
 	randomInteger := mathrand.Intn(math.MaxInt64)
 	randomInteger64 := int64(randomInteger)
@@ -63,7 +63,7 @@ func (cert *Cert) GenerateCA() (privatekey *rsa.PrivateKey, publickey *rsa.Publi
 	}
 
 	publicKey := &privateKey.PublicKey
-	caTemplate := cert.generateTemplate(privateKey)
+	caTemplate := cert.GenerateTemplate(privateKey)
 	caCert, err := cert.generateCert(caTemplate, caTemplate, privateKey, publicKey)
 	if err != nil {
 		return nil, nil, nil, err
