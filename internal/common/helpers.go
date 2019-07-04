@@ -34,18 +34,18 @@ func RunCron(name string, cronString string, cronFunc func()) {
 }
 
 func FileToYaml(filepath string, dataStruct interface{}) error {
-	serverConfigYamlFile, err := os.Open(filepath)
+	file, err := os.Open(filepath)
 	if err != nil {
 		return err
 	}
 
-	defer serverConfigYamlFile.Close()
+	defer file.Close()
 
-	serverConfigData, err := ioutil.ReadAll(serverConfigYamlFile)
+	fileData, err := ioutil.ReadAll(file)
 	if err != nil {
 		return nil
 	}
 
-	yaml.Unmarshal(serverConfigData, dataStruct)
+	yaml.Unmarshal(fileData, dataStruct)
 	return nil
 }

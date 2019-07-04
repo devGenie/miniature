@@ -16,6 +16,7 @@ type Client struct {
 	conn        *net.UDPConn
 	waiter      sync.WaitGroup
 	sessionChan chan string
+	config      ClientConfig
 }
 
 type ClientConfig struct {
@@ -25,14 +26,15 @@ type ClientConfig struct {
 	PrivateKey    string
 }
 
-func NewClient(server string) {
+func (client *Client) Run(config ClientConfig) {
 	_, err := utilities.NewInterface()
 	if err != nil {
 		log.Printf("Failed to create interface")
 	}
-
-	client := new(Client)
-	client.listen(server, "4321")
+	client.config = config
+	fmt.Println(client.config.ServerAddress)
+	fmt.Println(client.config.ListeningPort)
+	client.listen(client.config.ServerAddress, strconv.Itoa(client.config.ListeningPort))
 	defer client.conn.Close()
 	//incoming := make(chan []byte)
 	client.sessionChan = make(chan string)
