@@ -1,4 +1,4 @@
-package main
+package common
 
 import (
 	"bytes"
@@ -41,7 +41,7 @@ type TCP struct {
 	Tcp_fin     []byte
 }
 
-func decode(dataStructure interface{}, data []byte) error {
+func Decode(dataStructure interface{}, data []byte) error {
 	buffer := bytes.NewBuffer(data)
 	decoder := gob.NewDecoder(buffer)
 	err := decoder.Decode(dataStructure)
@@ -54,7 +54,7 @@ func decode(dataStructure interface{}, data []byte) error {
 	return nil
 }
 
-func encode(dataStructure interface{}) (encoded []byte, err error) {
+func Encode(dataStructure interface{}) (encoded []byte, err error) {
 	var buffer bytes.Buffer
 	encoder := gob.NewEncoder(&buffer)
 	err = encoder.Encode(dataStructure)

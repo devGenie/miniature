@@ -1,4 +1,4 @@
-package main
+package common
 
 import (
 	"bufio"
@@ -13,15 +13,15 @@ import (
 )
 
 type Tun struct {
-	ifce       *water.Interface
-	name       string
-	ip         net.IP
-	remote     net.IP
-	subnetMask net.IPMask
-	mtu        string
+	Ifce       *water.Interface
+	Name       string
+	Ip         net.IP
+	Remote     net.IP
+	SubnetMask net.IPMask
+	Mtu        string
 }
 
-func newInterface() (*Tun, error) {
+func NewInterface() (*Tun, error) {
 	config := water.Config{
 		DeviceType: water.TUN,
 	}
@@ -31,38 +31,38 @@ func newInterface() (*Tun, error) {
 		return nil, err
 	}
 	ifce := new(Tun)
-	ifce.ifce = tunInterface
+	ifce.Ifce = tunInterface
 	return ifce, nil
 }
 
 func (tun *Tun) Configure(ifceAddr net.IP, remote net.IP, mtu string) error {
 	ipaddr := ifceAddr.String()
-	command := fmt.Sprintf("link set dev %s mtu %s", tun.ifce.Name(), mtu)
+	command := fmt.Sprintf("link set dev %s mtu %s", tun.Ifce.Name(), mtu)
 	err := RunCommand("ip", command)
 	if err != nil {
-		log.Fatalf("Error configuring interface %s, message: %s \n", tun.ifce.Name(), err)
+		log.Fatalf("Error configuring interface %s, message: %s \n", tun.Ifce.Name(), err)
 		return err
 	}
 
-	tun.mtu = mtu
-	command = fmt.Sprintf("add add dev %s local %s peer %s", tun.ifce.Name(), ipaddr, remote.String())
+	tun.Mtu = mtu
+	command = fmt.Sprintf("add add dev %s local %s peer %s", tun.Ifce.Name(), ipaddr, remote.String())
 	err = RunCommand("ip", command)
 	if err != nil {
-		log.Fatalf("Error configuring interface %s, message: %s \n", tun.ifce.Name(), err)
+		log.Fatalf("Error configuring interface %s, message: %s \n", tun.Ifce.Name(), err)
 		return err
 	}
 
-	command = fmt.Sprintf("link set dev %s up", tun.ifce.Name())
+	command = fmt.Sprintf("link set dev %s up", tun.Ifce.Name())
 	err = RunCommand("ip", command)
 	if err != nil {
-		log.Printf("Error configuring interface %s, message: %s \n", tun.ifce.Name(), err)
+		log.Printf("Error configuring interface %s, message: %s \n", tun.Ifce.Name(), err)
 		return err
 	}
-	tun.ip = ifceAddr
+	tun.Ip = ifceAddr
 	return nil
 }
 
-func getDefaultGateway() (ifaceName string, gateway string, err error) {
+func GetDefaultGateway() (ifaceName string, gateway string, err error) {
 	routeFile, err := os.Open("/proc/net/route")
 	if err != nil {
 		log.Println("Error reading /proc/net/route")
