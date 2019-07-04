@@ -14,9 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devgenie/miniature/cryptography"
 	"golang.org/x/net/ipv4"
-	yaml "gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3"
+
+	utilities "github.com/devgenie/miniature/internal/common"
+	"github.com/devgenie/miniature/internal/cryptography"
 )
 
 type Peer struct {
@@ -28,10 +30,11 @@ type Peer struct {
 }
 
 type Server struct {
-	tunInterface   *Tun
+	tunInterface   *utilities.Tun
 	network        *net.IPNet
 	socket         *net.UDPConn
 	ipPool         []string
+	Config         ServerConfig
 	connectionPool map[string]*Peer
 	waiter         sync.WaitGroup
 }
@@ -39,16 +42,18 @@ type Server struct {
 type ServerConfig struct {
 	CertificatesDirectory string
 	Network               string
+	ListeningPort         int
 }
 
-func NewServer(address string) {
-	ifce, err := newInterface()
+func (server *Server) Run(config ServerConfig) {
+	server.Config = config
+	ifce, err := utilities.NewInterface()
 	if err != nil {
 		log.Print("Failed to create interface")
 		return
 	}
 
-	ip, network, err := net.ParseCIDR(address)
+	ip, network, err := net.ParseCIDR(config.Network)
 	if err != nil {
 		log.Print("Failed to create interface")
 		return
@@ -61,36 +66,38 @@ func NewServer(address string) {
 	}
 
 	// route client traffic through tun interface
-	command := fmt.Sprintf("route add %s dev %s", network.String(), ifce.ifce.Name())
-	RunCommand("ip", command)
+	command := fmt.Sprintf("route add %s dev %s", network.String(), ifce.Ifce.Name())
+	utilities.RunCommand("ip", command)
 
-	gatewayIfce, _, err := getDefaultGateway()
+	gatewayIfce, _, err := utilities.GetDefaultGateway()
 
-	command = fmt.Sprintf("-A FORWARD -i %s -o %s -m state --state RELATED,ESTABLISHED -j ACCEPT", ifce.ifce.Name(), gatewayIfce)
-	RunCommand("iptables", command)
+	command = fmt.Sprintf("-A FORWARD -i %s -o %s -m state --state RELATED,ESTABLISHED -j ACCEPT", ifce.Ifce.Name(), gatewayIfce)
+	utilities.RunCommand("iptables", command)
 
-	command = fmt.Sprintf("-A FORWARD -i %s -o %s -j ACCEPT", gatewayIfce, ifce.ifce.Name())
-	RunCommand("iptables", command)
+	command = fmt.Sprintf("-A FORWARD -i %s -o %s -j ACCEPT", gatewayIfce, ifce.Ifce.Name())
+	utilities.RunCommand("iptables", command)
 
 	command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j MASQUERADE", gatewayIfce)
-	RunCommand("iptables", command)
+	utilities.RunCommand("iptables", command)
 
-	server := new(Server)
 	server.tunInterface = ifce
 	server.network = network
 	server.connectionPool = make(map[string]*Peer)
 
 	certExists := true
 
-	if _, err := os.Stat("ca.crt"); err != nil {
+	_, err = os.Stat(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt"))
+	if err != nil {
 		certExists = false
 	}
 
-	if _, err := os.Stat("privatekey.pem"); err != nil {
+	_, err = os.Stat(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "privatekey.pem"))
+	if err != nil {
 		certExists = false
 	}
 
-	if _, err := os.Stat("publickey.pem"); err != nil {
+	_, err = os.Stat(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "publickey.pem"))
+	if err != nil {
 		certExists = false
 	}
 
@@ -103,8 +110,6 @@ func NewServer(address string) {
 		}
 	}
 
-	server.CreateClientConfig()
-
 	server.waiter.Add(2)
 	server.createIPPool()
 	go server.listenAndServe()
@@ -115,6 +120,13 @@ func NewServer(address string) {
 }
 
 func (server *Server) createCertificates() error {
+	_, err := os.Stat(server.Config.CertificatesDirectory)
+	if os.IsNotExist(err) {
+		err = os.MkdirAll(server.Config.CertificatesDirectory, 700)
+		if err != nil {
+			return err
+		}
+	}
 	cert := new(cryptography.Cert)
 	cert.IsCA = true
 	cert.Country = "Uganda"
@@ -127,7 +139,7 @@ func (server *Server) createCertificates() error {
 	}
 
 	// save server's certificate as a pem encoded crt file
-	certificateFile, err := os.Create("ca.crt")
+	certificateFile, err := os.Create(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt"))
 	if err != nil {
 		log.Println("Failed to save certificate file")
 		return err
@@ -143,7 +155,7 @@ func (server *Server) createCertificates() error {
 	}
 
 	// save public key as pem encoded file
-	publicKeyFile, err := os.Create("publickey.pem")
+	publicKeyFile, err := os.Create(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "publickey.pem"))
 	if err != nil {
 		log.Println("failed to save public key")
 		return err
@@ -166,7 +178,7 @@ func (server *Server) createCertificates() error {
 	}
 
 	// save private key as pem encoded file
-	privateKeyFile, err := os.Create("privatekey.pem")
+	privateKeyFile, err := os.Create(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "privatekey.pem"))
 	if err != nil {
 		log.Println("Failed to save private key")
 		return err
@@ -186,10 +198,11 @@ func (server *Server) createCertificates() error {
 }
 
 func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMessage error) {
-	serverCertificate, err := tls.LoadX509KeyPair("ca.crt", "privatekey.pem")
+	crtpath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
+	privatekeyPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "privatekey.pem")
+	serverCertificate, err := tls.LoadX509KeyPair(crtpath, privatekeyPath)
 	if err != nil {
 		return "", err
-		log.Println(err)
 	}
 
 	ca, err := x509.ParseCertificate(serverCertificate.Certificate[0])
@@ -199,16 +212,17 @@ func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMess
 	clientCertTemplate := *ca
 	clientCertTemplate.IsCA = false
 
-	privateKeyFile, err := os.Open("privatekey.pem")
+	privateKeyFile, err := os.Open(privatekeyPath)
 	if err != nil {
 		return "", err
 	}
+	defer privateKeyFile.Close()
 
 	fileInfo, err := privateKeyFile.Stat()
 	if err != nil {
 		return "", err
 	}
-	var filesize int64 = fileInfo.Size()
+	filesize := fileInfo.Size()
 	pemBytes := make([]byte, filesize)
 	buffer := bufio.NewReader(privateKeyFile)
 	_, err = buffer.Read(pemBytes)
@@ -217,7 +231,6 @@ func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMess
 	}
 
 	pemdata, _ := pem.Decode([]byte(pemBytes))
-	privateKeyFile.Close()
 
 	caPrivateKey, err := x509.ParsePKCS1PrivateKey(pemdata.Bytes)
 	if err != nil {
@@ -244,7 +257,7 @@ func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMess
 	privateKeyBytes := pem.EncodeToMemory(privateKeyPem)
 
 	// get default gateway and add the public IP address to configuration
-	_, gatewayIP, err := getDefaultGateway()
+	_, gatewayIP, err := utilities.GetDefaultGateway()
 	if err != nil {
 		log.Println(err)
 		return "", err
@@ -252,7 +265,7 @@ func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMess
 
 	clientConfig := new(ClientConfig)
 	clientConfig.ServerAddress = gatewayIP
-	clientConfig.ListeningPort = 4321
+	clientConfig.ListeningPort = server.Config.ListeningPort
 	clientConfig.PrivateKey = string(privateKeyBytes)
 	clientConfig.Certificate = string(certBytes)
 
@@ -265,7 +278,7 @@ func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMess
 
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
-	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", 4321))
+	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", server.Config.ListeningPort))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
@@ -278,7 +291,7 @@ func (server *Server) listenAndServe() {
 	defer lstnConn.Close()
 
 	inputBytes := make([]byte, 2048)
-	packet := new(Packet)
+	packet := new(utilities.Packet)
 	for {
 		length, addr, err := lstnConn.ReadFromUDP(inputBytes)
 
@@ -289,7 +302,7 @@ func (server *Server) listenAndServe() {
 
 		fmt.Printf("Received %d bytes from %v \n", length, addr)
 
-		err = decode(packet, inputBytes[:length])
+		err = utilities.Decode(packet, inputBytes[:length])
 
 		if err != nil {
 			log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
@@ -300,13 +313,13 @@ func (server *Server) listenAndServe() {
 		headerFlag := packetHeader.Flag
 
 		switch headerFlag {
-		case HANDSHAKE:
+		case utilities.HANDSHAKE:
 			server.handleHandshake(addr)
-		case CLIENT_CONFIGURATION:
+		case utilities.CLIENT_CONFIGURATION:
 			server.registerClient(addr, packet.Payload)
-		case HEARTBEAT:
+		case utilities.HEARTBEAT:
 			server.handleHeartbeat(packet.Payload)
-		case SESSION:
+		case utilities.SESSION:
 			server.handleConnection(packet.Payload)
 		default:
 			fmt.Println("Expected headers not found")
@@ -317,7 +330,7 @@ func (server *Server) listenAndServe() {
 }
 
 func (server *Server) handleConnection(packet []byte) {
-	server.tunInterface.ifce.Write(packet)
+	server.tunInterface.Ifce.Write(packet)
 }
 
 func (server *Server) handleHandshake(addr *net.UDPAddr) {
@@ -329,12 +342,12 @@ func (server *Server) handleHandshake(addr *net.UDPAddr) {
 
 	clientIP := server.getAvailableIP()
 	clientIPv4 := net.ParseIP(clientIP)
-	packet := new(Packet)
-	packet.PacketHeader = PacketHeader{Flag: HANDSHAKE_ACCEPTED}
+	packet := new(utilities.Packet)
+	packet.PacketHeader = utilities.PacketHeader{Flag: utilities.HANDSHAKE_ACCEPTED}
 
-	ip := Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.ip}
+	ip := utilities.Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.Ip}
 
-	encodedIP, err := encode(&ip)
+	encodedIP, err := utilities.Encode(&ip)
 
 	if err != nil {
 		log.Printf("Error encoding IP address data \t Error : %s \n", err)
@@ -343,7 +356,7 @@ func (server *Server) handleHandshake(addr *net.UDPAddr) {
 
 	packet.Payload = encodedIP
 
-	encodedPacket, err := encode(packet)
+	encodedPacket, err := utilities.Encode(packet)
 
 	if err != nil {
 		log.Printf("Error encoding packet \t Error : %s \n", err)
@@ -358,7 +371,7 @@ func (server *Server) handleHandshake(addr *net.UDPAddr) {
 func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 	peer := new(Peer)
 
-	err := decode(peer, payload)
+	err := utilities.Decode(peer, payload)
 
 	if err != nil {
 		log.Printf("Error decoding peer data \t Error : %s \n", err)
@@ -369,11 +382,11 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 	peer.Addr = addr
 	server.connectionPool[peer.IP] = peer
 
-	packet := new(Packet)
-	packet.PacketHeader = PacketHeader{Flag: SESSION_ACCEPTED}
+	packet := new(utilities.Packet)
+	packet.PacketHeader = utilities.PacketHeader{Flag: utilities.SESSION_ACCEPTED}
 	packet.Payload = make([]byte, 0)
 
-	encodedPacket, err := encode(packet)
+	encodedPacket, err := utilities.Encode(packet)
 
 	if err != nil {
 		log.Printf("Error encoding peer packet \t Error : %s \n", err)
@@ -394,7 +407,7 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 
 func (server *Server) handleHeartbeat(packet []byte) {
 	peer := new(Peer)
-	err := decode(peer, packet)
+	err := utilities.Decode(peer, packet)
 	if err != nil {
 		fmt.Println("Error decoding peer data", err)
 	}
@@ -419,10 +432,10 @@ func (server *Server) createIPPool() int {
 	fmt.Printf("The CIDR of this network is %s \n", server.network.String())
 	fmt.Printf("Generating IP address for %s network space \n", server.network)
 
-	ip := server.tunInterface.ip
+	ip := server.tunInterface.Ip
 	for ip := ip.Mask(server.network.Mask); server.network.Contains(ip); constructIP(ip) {
 		// skip if ip is the same as the vitual interface's
-		if server.tunInterface.ip.String() != ip.String() {
+		if server.tunInterface.Ip.String() != ip.String() {
 			server.ipPool = append(server.ipPool, ip.String())
 		} else {
 			fmt.Printf("Skipping the interface id %s \n", ip)
@@ -446,7 +459,7 @@ func constructIP(ip net.IP) {
 func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	fmt.Println("Handling outgoing connection")
-	mtu := server.tunInterface.mtu
+	mtu := server.tunInterface.Mtu
 	packetSize, err := strconv.Atoi(mtu)
 
 	if err != nil {
@@ -456,7 +469,7 @@ func (server *Server) readIfce() {
 	packetSize = packetSize - 400
 	buffer := make([]byte, packetSize)
 	for {
-		length, err := server.tunInterface.ifce.Read(buffer)
+		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
 			fmt.Println(err)
 			continue
@@ -468,9 +481,9 @@ func (server *Server) readIfce() {
 				fmt.Println(err)
 				continue
 			}
-			packetHeader := PacketHeader{Flag: SESSION}
-			sendPacket := Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
-			encodedPacket, err := encode(sendPacket)
+			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
+			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
+			encodedPacket, err := utilities.Encode(sendPacket)
 
 			if err != nil {
 				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
@@ -486,7 +499,7 @@ func (server *Server) readIfce() {
 }
 
 func (server *Server) watchConnections() {
-	RunCron("Cleaner", "0 0/5 * * * *", server.cleanupDeadConnections)
+	utilities.RunCron("Cleaner", "0 0/5 * * * *", server.cleanupDeadConnections)
 }
 
 func (server *Server) cleanupDeadConnections() {
