@@ -11,6 +11,7 @@ import (
 	"math"
 	"math/big"
 	mathrand "math/rand"
+	"net"
 	"time"
 )
 
@@ -24,6 +25,7 @@ type Cert struct {
 	StreetAddress      string
 	PostalCode         string
 	CommonName         string
+	IPAddress          string
 	ExpiryDate         string
 }
 
@@ -32,6 +34,9 @@ func (cert *Cert) GenerateTemplate(privateKey *rsa.PrivateKey) (certificateTempl
 	randomInteger := mathrand.Intn(math.MaxInt64)
 	randomInteger64 := int64(randomInteger)
 	subjectKeyID := HashBigInt(privateKey.N)
+
+	ipAddress := net.ParseIP(cert.IPAddress)
+
 	template := &x509.Certificate{
 		IsCA:         cert.IsCA,
 		SubjectKeyId: subjectKeyID,
@@ -51,6 +56,7 @@ func (cert *Cert) GenerateTemplate(privateKey *rsa.PrivateKey) (certificateTempl
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		BasicConstraintsValid: true,
+		IPAddresses:           []net.IP{ipAddress},
 	}
 
 	return template
