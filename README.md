@@ -1,6 +1,6 @@
 ## Miniature ##
 
-Miniature is an openvpn server and client written in go. Miniature uses songao's water library under the hood.
+Miniature is an vpn server and client written in go. Miniature uses songao's water library under the hood.
 
 **Setup**
 
