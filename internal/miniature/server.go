@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -103,10 +104,30 @@ func (server *Server) Run(config ServerConfig) {
 
 	if !certExists {
 		log.Println("Could not find one or more certificate files, creating fresh ones")
-		err = server.createCertificates()
+		err = server.createCA()
 		if err != nil {
 			log.Println("Failed to create certificate files")
 			return
+		}
+	} else {
+		serverCertsExist := true
+		_, err = os.Stat(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt"))
+		if err != nil {
+			serverCertsExist = false
+		}
+
+		_, err = os.Stat(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.pem"))
+		if err != nil {
+			serverCertsExist = false
+		}
+
+		if !serverCertsExist {
+			log.Println("Could not find one or more server certificate files, creating fresh ones")
+			err = server.generateServerCerts()
+			if err != nil {
+				log.Println("Failed to create server certificate files")
+				return
+			}
 		}
 	}
 
@@ -119,7 +140,39 @@ func (server *Server) Run(config ServerConfig) {
 	server.waiter.Wait()
 }
 
-func (server *Server) createCertificates() error {
+func (server *Server) CreateClientConfig() (yamlConfiguration string, errorMessage error) {
+	// get default gateway and add the public IP address to configuration
+	certPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
+	privatekeyPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "privatekey.pem")
+	privateKeyBytes, certBytes, err := server.generateCerts(certPath, privatekeyPath)
+	if err != nil {
+		return "", err
+	}
+
+	caCertBytes, err := ioutil.ReadFile(certPath)
+	if err != nil {
+		return "", err
+	}
+	_, gatewayIP, err := utilities.GetDefaultGateway()
+	if err != nil {
+		return "", err
+	}
+
+	clientConfig := new(ClientConfig)
+	clientConfig.ServerAddress = gatewayIP
+	clientConfig.ListeningPort = server.Config.ListeningPort
+	clientConfig.PrivateKey = string(privateKeyBytes)
+	clientConfig.Certificate = string(certBytes)
+	clientConfig.CACert = string(caCertBytes)
+
+	configFile, err := yaml.Marshal(clientConfig)
+	if err != nil {
+		return "", err
+	}
+	return string(configFile), nil
+}
+
+func (server *Server) createCA() error {
 	_, err := os.Stat(server.Config.CertificatesDirectory)
 	if os.IsNotExist(err) {
 		err = os.MkdirAll(server.Config.CertificatesDirectory, 700)
@@ -132,6 +185,7 @@ func (server *Server) createCertificates() error {
 	cert.Country = "Uganda"
 	cert.Organization = "GenieLabs"
 	cert.CommonName = "GenieLabs"
+	cert.IPAddress = "172.20.0.4"
 
 	privateKey, publicKey, caCert, err := cert.GenerateCA()
 	if err != nil {
@@ -194,47 +248,75 @@ func (server *Server) createCertificates() error {
 	}
 
 	log.Println("Successfully created certificate files")
+	err = server.generateServerCerts()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMessage error) {
-	crtpath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
+func (server *Server) generateServerCerts() error {
+	certPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
 	privatekeyPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "privatekey.pem")
-	serverCertificate, err := tls.LoadX509KeyPair(crtpath, privatekeyPath)
+	privateKeyBytes, certBytes, err := server.generateCerts(certPath, privatekeyPath)
+
 	if err != nil {
-		return "", err
+		panic(err)
+	}
+
+	serverCertFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
+	serverPrivatekeyPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.pem")
+	err = ioutil.WriteFile(serverCertFile, certBytes, 0644)
+	if err != nil {
+		log.Println("Failed to write Certificate file")
+		return err
+	}
+
+	err = ioutil.WriteFile(serverPrivatekeyPath, privateKeyBytes, 0644)
+	if err != nil {
+		log.Println("Failed to write private key")
+		return err
+	}
+
+	return nil
+}
+
+func (server *Server) generateCerts(certPath string, privatekeyPath string) (privateKey []byte, cert []byte, err error) {
+	serverCertificate, err := tls.LoadX509KeyPair(certPath, privatekeyPath)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	ca, err := x509.ParseCertificate(serverCertificate.Certificate[0])
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 	clientCertTemplate := *ca
 	clientCertTemplate.IsCA = false
 
 	privateKeyFile, err := os.Open(privatekeyPath)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 	defer privateKeyFile.Close()
 
 	fileInfo, err := privateKeyFile.Stat()
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 	filesize := fileInfo.Size()
 	pemBytes := make([]byte, filesize)
 	buffer := bufio.NewReader(privateKeyFile)
 	_, err = buffer.Read(pemBytes)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 
 	pemdata, _ := pem.Decode([]byte(pemBytes))
 
 	caPrivateKey, err := x509.ParsePKCS1PrivateKey(pemdata.Bytes)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 
 	clientCert := new(cryptography.Cert)
@@ -255,25 +337,7 @@ func (server *Server) CreateClientConfig() (yamlConfiguratyion string, errorMess
 	}
 
 	privateKeyBytes := pem.EncodeToMemory(privateKeyPem)
-
-	// get default gateway and add the public IP address to configuration
-	_, gatewayIP, err := utilities.GetDefaultGateway()
-	if err != nil {
-		log.Println(err)
-		return "", err
-	}
-
-	clientConfig := new(ClientConfig)
-	clientConfig.ServerAddress = gatewayIP
-	clientConfig.ListeningPort = server.Config.ListeningPort
-	clientConfig.PrivateKey = string(privateKeyBytes)
-	clientConfig.Certificate = string(certBytes)
-
-	configFile, err := yaml.Marshal(clientConfig)
-	if err != nil {
-		return "", err
-	}
-	return string(configFile), nil
+	return privateKeyBytes, certBytes, err
 }
 
 func (server *Server) listenAndServe() {
