@@ -1,12 +1,18 @@
 package miniature
 
 import (
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/gob"
 	"fmt"
 	"log"
 	"net"
 	"strconv"
 	"sync"
 
+	"github.com/aead/ecdh"
 	utilities "github.com/devgenie/miniature/internal/common"
 	"golang.org/x/net/ipv4"
 )
@@ -17,6 +23,7 @@ type Client struct {
 	waiter      sync.WaitGroup
 	sessionChan chan string
 	config      ClientConfig
+	secret      []byte
 }
 
 type ClientConfig struct {
@@ -24,26 +31,131 @@ type ClientConfig struct {
 	ListeningPort int
 	Certificate   string
 	PrivateKey    string
+	CACert        string
 }
 
-func (client *Client) Run(config ClientConfig) {
+func (client *Client) Run(config ClientConfig) error {
 	_, err := utilities.NewInterface()
 	if err != nil {
 		log.Printf("Failed to create interface")
 	}
 	client.config = config
-	fmt.Println(client.config.ServerAddress)
-	fmt.Println(client.config.ListeningPort)
+	err = client.AuthenticateUser()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
 	client.listen(client.config.ServerAddress, strconv.Itoa(client.config.ListeningPort))
 	defer client.conn.Close()
-	//incoming := make(chan []byte)
 	client.sessionChan = make(chan string)
 	client.waiter.Add(2)
 	go client.handleIncomingConnections()
 	go client.handleOutgoingConnections()
-	client.greetServer()
 
 	client.waiter.Wait()
+	return nil
+}
+
+func (client *Client) AuthenticateUser() error {
+	caCert := []byte(client.config.CACert)
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM(caCert)
+	if !ok {
+		log.Println("Failed to Parse certificate")
+	}
+
+	cert, err := tls.X509KeyPair([]byte(client.config.Certificate), []byte(client.config.PrivateKey))
+	if err != nil {
+		panic(err)
+	}
+	conf := &tls.Config{
+		RootCAs:      certPool,
+		Certificates: []tls.Certificate{cert},
+	}
+
+	serverAddress := fmt.Sprintf("%s:%d", client.config.ServerAddress, 443)
+	conn, err := tls.Dial("tcp", serverAddress, conf)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	p384 := ecdh.Generic(elliptic.P384())
+	clientPrivatekey, clientPublic, err := p384.GenerateKey(rand.Reader)
+	if err != nil {
+		log.Println("Failed to generate client's public/private key pair")
+		return err
+	}
+
+	packetHeader := utilities.PacketHeader{Flag: utilities.HANDSHAKE}
+	gob.Register(ecdh.Point{})
+	packet := utilities.Packet{PacketHeader: packetHeader, PublicKey: clientPublic}
+	encodedData, err := utilities.Encode(&packet)
+
+	n, err := conn.Write(encodedData)
+	if err != nil {
+		log.Println(n, err)
+		return err
+	}
+
+	buf := make([]byte, 512)
+	for {
+		n, err = conn.Read(buf)
+		if err != nil {
+			log.Println(n, err)
+			return err
+		}
+		packetReply := new(utilities.Packet)
+		utilities.Decode(packetReply, buf)
+
+		if packetReply.PacketHeader.Flag == utilities.HANDSHAKE_ACCEPTED {
+			log.Println("Server Handshake accepted, configuring client interfaces")
+			ipaddr := new(utilities.Addr)
+			err := utilities.Decode(ipaddr, packetReply.Payload)
+			if err != nil {
+				log.Println(err)
+				return err
+			}
+
+			secret := p384.ComputeSecret(clientPrivatekey, packetReply.PublicKey)
+			client.secret = secret
+
+			ifce, err := utilities.NewInterface()
+			if err != nil {
+				log.Println("Error creating tun interface")
+				return err
+			}
+
+			err = ifce.Configure(ipaddr.IpAddr, ipaddr.Gateway, "1400")
+			if err != nil {
+				log.Printf("Error: %s \n", err)
+				return err
+			}
+
+			fmt.Println("Client has been assigned ", ipaddr.IpAddr)
+			client.ifce = ifce
+
+			fmt.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
+
+			command := "route delete 0.0.0.0/0"
+			err = utilities.RunCommand("ip", command)
+			if err != nil {
+				log.Printf("Error deleting route message: %s \n", err)
+			}
+
+			command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", client.ifce.Ip.String(), client.ifce.Ifce.Name())
+			err = utilities.RunCommand("ip", command)
+			if err != nil {
+				log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
+			}
+
+			client.sessionChan <- client.ifce.Mtu
+			client.StartHeartBeat()
+			break
+		}
+	}
+	return nil
 }
 
 func (client *Client) listen(server string, port string) {
@@ -59,73 +171,13 @@ func (client *Client) listen(server string, port string) {
 	client.conn = conn
 }
 
-func (client *Client) greetServer() {
-	fmt.Println("Greeting server")
-	packetHeader := utilities.PacketHeader{Flag: utilities.HANDSHAKE}
-	packet := utilities.Packet{PacketHeader: packetHeader, Payload: make([]byte, 0)}
-
-	encodedData, err := utilities.Encode(&packet)
-
-	if err != nil {
-		log.Printf("An error occured while encoding data returned \n Error: %s \n", err)
-		return
-	}
-
-	client.conn.Write(encodedData)
-
-}
-
-func (client *Client) handleServerGreeting(packet []byte) {
-	fmt.Println("Handling Server greeting")
-	fmt.Println("Configuring new tun interface")
-	ifce, err := utilities.NewInterface()
-	if err != nil {
-		log.Println("Error creating tun interface")
-	}
-
-	ipAddr := new(utilities.Addr)
-	err = utilities.Decode(ipAddr, packet)
-	if err != nil {
-		log.Printf("An error occurred trying to decode data from the server \t Error: %s \n", err)
-		return
-	}
-	err = ifce.Configure(ipAddr.IpAddr, ipAddr.Gateway, "1400")
-	if err != nil {
-		log.Printf("Error: %s \n", err)
-	}
-
-	fmt.Println("Client has been assigned ", ipAddr.IpAddr)
-	fmt.Println("Sending reply to server")
-	client.ifce = ifce
-
-	peer := new(Peer)
-	peer.IP = ifce.Ip.String()
-	encodedPeer, err := utilities.Encode(&peer)
-	if err != nil {
-		log.Printf("An error occured while encording peer data \t Error : %s \n", err)
-		return
-	}
-
-	packetHeader := utilities.PacketHeader{Flag: utilities.CLIENT_CONFIGURATION}
-	sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encodedPeer}
-
-	encodedPacket, err := utilities.Encode(&sendPacket)
-
-	if err != nil {
-		log.Printf("An error occured while encording peer data \t Error : %s \n", err)
-		return
-	}
-
-	client.conn.Write(encodedPacket)
-}
-
 func (client *Client) handleIncomingConnections() {
 	defer client.waiter.Done()
 
 	inputBytes := make([]byte, 2048)
-	packet := new(utilities.Packet)
 
 	for {
+		packet := new(utilities.Packet)
 		length, err := client.conn.Read(inputBytes)
 		if err != nil || length == 0 {
 			fmt.Printf("Error : %s \n", err)
@@ -142,30 +194,10 @@ func (client *Client) handleIncomingConnections() {
 		packetHeader := packet.PacketHeader
 		headerFlag := packetHeader.Flag
 
-		switch headerFlag {
-		case utilities.HANDSHAKE_ACCEPTED:
-			client.handleServerGreeting(packet.Payload)
-		case utilities.SESSION_ACCEPTED:
-			fmt.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
-
-			command := "route delete 0.0.0.0/0"
-			err := utilities.RunCommand("ip", command)
-			if err != nil {
-				log.Printf("Error cdeleting route message: %s \n", err)
-			}
-
-			command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", client.ifce.Ip.String(), client.ifce.Ifce.Name())
-			err = utilities.RunCommand("ip", command)
-			if err != nil {
-				log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
-			}
-
-			client.sessionChan <- client.ifce.Mtu
-			client.StartHeartBeat()
-		case utilities.SESSION:
+		if headerFlag == utilities.SESSION {
 			client.writeToIfce(packet.Payload)
-		default:
-			fmt.Println("Expected headers not found")
+		} else {
+			log.Println("Expected headers not found")
 		}
 	}
 }
