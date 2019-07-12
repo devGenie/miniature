@@ -2,9 +2,12 @@ package miniature
 
 import (
 	"bufio"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/gob"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
@@ -18,6 +21,7 @@ import (
 	"golang.org/x/net/ipv4"
 	"gopkg.in/yaml.v3"
 
+	"github.com/aead/ecdh"
 	utilities "github.com/devgenie/miniature/internal/common"
 	"github.com/devgenie/miniature/internal/cryptography"
 )
@@ -133,6 +137,7 @@ func (server *Server) Run(config ServerConfig) {
 
 	server.waiter.Add(2)
 	server.createIPPool()
+	server.listenTLS()
 	go server.listenAndServe()
 	go server.readIfce()
 
@@ -340,6 +345,104 @@ func (server *Server) generateCerts(certPath string, privatekeyPath string) (pri
 	return privateKeyBytes, certBytes, err
 }
 
+func (server *Server) listenTLS() {
+	caFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
+	crtFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
+	privateKey := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.pem")
+
+	certPem, err := ioutil.ReadFile(caFile)
+	if err != nil {
+		log.Println(err)
+	}
+
+	roots := x509.NewCertPool()
+	ok := roots.AppendCertsFromPEM(certPem)
+	if !ok {
+		log.Println("Failed to parse certificate")
+	}
+
+	cert, err := tls.LoadX509KeyPair(crtFile, privateKey)
+	if err != nil {
+		log.Println(err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    roots,
+	}
+
+	listeningConn, err := tls.Listen("tcp", ":443", tlsConfig)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	defer listeningConn.Close()
+	gob.Register(ecdh.Point{})
+	for {
+		conn, err := listeningConn.Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		go server.handleTLS(conn)
+	}
+}
+
+func (server *Server) handleTLS(conn net.Conn) {
+	defer conn.Close()
+	p384 := ecdh.Generic(elliptic.P384())
+	buffer := make([]byte, 512)
+	for {
+		_, err := conn.Read(buffer)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		packet := new(utilities.Packet)
+		utilities.Decode(packet, buffer)
+		if packet.PacketHeader.Flag == utilities.HANDSHAKE {
+			log.Println("Initiating Handshake")
+			clientPublicKey := packet.PublicKey
+			if err := p384.Check(clientPublicKey); err != nil {
+				log.Println("Public Key is not on the curve")
+				continue
+			}
+
+			serverPrivateKey, serverPublicKey, err := p384.GenerateKey(rand.Reader)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			secret := p384.ComputeSecret(serverPrivateKey, clientPublicKey)
+			log.Println(secret)
+			packetHeaderData := utilities.PacketHeader{Flag: utilities.HANDSHAKE_ACCEPTED}
+			packetData := utilities.Packet{PacketHeader: packetHeaderData, PublicKey: serverPublicKey}
+			clientIP := server.getAvailableIP()
+			clientIPv4 := net.ParseIP(clientIP)
+			ip := utilities.Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.Ip}
+			encodedIP, err := utilities.Encode(&ip)
+			if err != nil {
+				log.Printf("Error encoding IP address data \t Error : %s \n", err)
+				continue
+			}
+
+			packetData.Payload = encodedIP
+			encodedPacket, err := utilities.Encode(packetData)
+			if err != nil {
+				log.Printf("Error encoding packet \t Error : %s \n", err)
+				continue
+			}
+			fmt.Printf("The number of available IP's was %v \n", len(server.ipPool))
+			fmt.Printf("Assigning client an IP address of %s \n", clientIP)
+			fmt.Printf("The number of available IP's is now %v \n", len(server.ipPool))
+			conn.Write(encodedPacket)
+		}
+	}
+}
+
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
 	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", server.Config.ListeningPort))
@@ -377,8 +480,6 @@ func (server *Server) listenAndServe() {
 		headerFlag := packetHeader.Flag
 
 		switch headerFlag {
-		case utilities.HANDSHAKE:
-			server.handleHandshake(addr)
 		case utilities.CLIENT_CONFIGURATION:
 			server.registerClient(addr, packet.Payload)
 		case utilities.HEARTBEAT:
@@ -395,41 +496,6 @@ func (server *Server) listenAndServe() {
 
 func (server *Server) handleConnection(packet []byte) {
 	server.tunInterface.Ifce.Write(packet)
-}
-
-func (server *Server) handleHandshake(addr *net.UDPAddr) {
-	// During handshakes the following should happen
-	// 1 - Authenticates client [TODO]
-	// 2 - Check for available IP addresses from address pool
-	// 3 - Assign IP address to client, send acknowlegment client to proceed with connection
-	fmt.Printf("Handshake recieved from potential client with address %s \n", addr.String())
-
-	clientIP := server.getAvailableIP()
-	clientIPv4 := net.ParseIP(clientIP)
-	packet := new(utilities.Packet)
-	packet.PacketHeader = utilities.PacketHeader{Flag: utilities.HANDSHAKE_ACCEPTED}
-
-	ip := utilities.Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.Ip}
-
-	encodedIP, err := utilities.Encode(&ip)
-
-	if err != nil {
-		log.Printf("Error encoding IP address data \t Error : %s \n", err)
-		return
-	}
-
-	packet.Payload = encodedIP
-
-	encodedPacket, err := utilities.Encode(packet)
-
-	if err != nil {
-		log.Printf("Error encoding packet \t Error : %s \n", err)
-		return
-	}
-	fmt.Printf("The number of available IP's was %v \n", len(server.ipPool))
-	fmt.Printf("Assigning client an IP address of %s \n", clientIP)
-	fmt.Printf("The number of available IP's is now %v \n", len(server.ipPool))
-	server.socket.WriteTo(encodedPacket, addr)
 }
 
 func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
