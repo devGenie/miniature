@@ -2,6 +2,7 @@ package common
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/gob"
 	"log"
 	"net"
@@ -11,9 +12,10 @@ const (
 	HANDSHAKE            byte = 0x01
 	HANDSHAKE_ACCEPTED   byte = 0x02
 	CLIENT_CONFIGURATION byte = 0x03
-	SESSION_ACCEPTED     byte = 0x04
-	HEARTBEAT            byte = 0x05
-	SESSION              byte = 0x06
+	SESSION_REQUEST      byte = 0x04
+	SESSION_ACCEPTED     byte = 0x05
+	HEARTBEAT            byte = 0x06
+	SESSION              byte = 0x07
 )
 
 type Addr struct {
@@ -29,9 +31,9 @@ type PacketHeader struct {
 
 type Packet struct {
 	PacketHeader
-	Payload []byte
+	PublicKey crypto.PublicKey
+	Payload   []byte
 }
-
 type TCP struct {
 	Tcp_src     string
 	Tcp_dst     string
