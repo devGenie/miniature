@@ -48,6 +48,16 @@ type ServerConfig struct {
 	CertificatesDirectory string
 	Network               string
 	ListeningPort         int
+	Metadata              struct {
+		Country       string `yaml:"Country"`
+		Organization  string `yaml:"Organization"`
+		Unit          string `yaml:"Unit"`
+		Locality      string `yaml:"Locality"`
+		Province      string `yaml:"Province"`
+		StreetAddress string `yaml:"StreetAddress"`
+		PostalCode    string `yaml:"PostalCode"`
+		CommonName    string `yaml:"CommonName"`
+	}
 }
 
 func (server *Server) Run(config ServerConfig) {
@@ -185,11 +195,17 @@ func (server *Server) createCA() error {
 			return err
 		}
 	}
+
 	cert := new(cryptography.Cert)
 	cert.IsCA = true
-	cert.Country = "Uganda"
-	cert.Organization = "GenieLabs"
-	cert.CommonName = "GenieLabs"
+	cert.Country = server.Config.Metadata.Country
+	cert.Organization = server.Config.Metadata.Organization
+	cert.OrganizationalUnit = server.Config.Metadata.Unit
+	cert.CommonName = server.Config.Metadata.CommonName
+	cert.Locality = server.Config.Metadata.Locality
+	cert.Province = server.Config.Metadata.Province
+	cert.StreetAddress = server.Config.Metadata.StreetAddress
+	cert.PostalCode = server.Config.Metadata.PostalCode
 	cert.IPAddress = "172.20.0.4"
 
 	privateKey, publicKey, caCert, err := cert.GenerateCA()

@@ -23,6 +23,7 @@ func startServer(serverConfig string) {
 		config.ListeningPort = 4321
 	}
 
+	log.Println(config.Metadata.Country)
 	server := new(miniature.Server)
 	server.Run(*config)
 }
