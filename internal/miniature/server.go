@@ -26,16 +26,24 @@ import (
 	"github.com/devgenie/miniature/internal/cryptography"
 )
 
+// Peer represents a client connected to the VPN server
 type Peer struct {
-	IP            string
-	Addr          *net.UDPAddr
+	//IP address of a client connected to the server
+	IP string
+	// UDP object to communicate back to the peer
+	Addr *net.UDPAddr
+	// Time since the last hearbeat was got from the client
 	LastHeartbeat time.Time
-	Cert          []byte
-	PublicKey     *rsa.PublicKey
+	// Peer's certificate file
+	Cert []byte
+	// Peer's public key
+	PublicKey *rsa.PublicKey
 }
 
+// Server represents attributes of the VPN server
 type Server struct {
 	tunInterface   *utilities.Tun
+	gatewayIfce    string
 	network        *net.IPNet
 	socket         *net.UDPConn
 	ipPool         []string
@@ -44,6 +52,8 @@ type Server struct {
 	waiter         sync.WaitGroup
 }
 
+// ServerConfig holds VPN server configurations
+// These configurations are read from a yaml file
 type ServerConfig struct {
 	CertificatesDirectory string
 	Network               string
@@ -60,6 +70,8 @@ type ServerConfig struct {
 	}
 }
 
+// Run starts the VPN server by passing a configuration object
+// The configuration object contains attributes needed to run the server
 func (server *Server) Run(config ServerConfig) {
 	server.Config = config
 	ifce, err := utilities.NewInterface()
@@ -97,6 +109,7 @@ func (server *Server) Run(config ServerConfig) {
 
 	server.tunInterface = ifce
 	server.network = network
+	server.gatewayIfce = gatewayIfce
 	server.connectionPool = make(map[string]*Peer)
 
 	certExists := true
@@ -155,6 +168,9 @@ func (server *Server) Run(config ServerConfig) {
 	server.waiter.Wait()
 }
 
+// CreateClientConfig creates a client configuration and parses it into yaml format
+// Upon successfully creating the client configuration yaml file,
+// a string representing the configuration and a nil error message is returned
 func (server *Server) CreateClientConfig() (yamlConfiguration string, errorMessage error) {
 	// get default gateway and add the public IP address to configuration
 	certPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
@@ -168,13 +184,17 @@ func (server *Server) CreateClientConfig() (yamlConfiguration string, errorMessa
 	if err != nil {
 		return "", err
 	}
-	_, gatewayIP, err := utilities.GetDefaultGateway()
+	ifceName, _, err := utilities.GetDefaultGateway()
 	if err != nil {
 		return "", err
 	}
 
+	publicIP, err := utilities.GetPublicIP(ifceName)
+	if err != nil {
+		return "", err
+	}
 	clientConfig := new(ClientConfig)
-	clientConfig.ServerAddress = gatewayIP
+	clientConfig.ServerAddress = publicIP
 	clientConfig.ListeningPort = server.Config.ListeningPort
 	clientConfig.PrivateKey = string(privateKeyBytes)
 	clientConfig.Certificate = string(certBytes)
@@ -206,8 +226,12 @@ func (server *Server) createCA() error {
 	cert.Province = server.Config.Metadata.Province
 	cert.StreetAddress = server.Config.Metadata.StreetAddress
 	cert.PostalCode = server.Config.Metadata.PostalCode
-	cert.IPAddress = "172.20.0.4"
 
+	ipaddress, err := utilities.GetPublicIP(server.gatewayIfce)
+	if err != nil {
+		return err
+	}
+	cert.IPAddress = ipaddress
 	privateKey, publicKey, caCert, err := cert.GenerateCA()
 	if err != nil {
 		return err
