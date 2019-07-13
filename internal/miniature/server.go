@@ -397,8 +397,8 @@ func (server *Server) handleTLS(conn net.Conn) {
 	for {
 		_, err := conn.Read(buffer)
 		if err != nil {
-			log.Println(err)
-			continue
+			log.Printf("Connection to %s closed \n", conn.RemoteAddr().String())
+			break
 		}
 		packet := new(utilities.Packet)
 		utilities.Decode(packet, buffer)
@@ -435,9 +435,9 @@ func (server *Server) handleTLS(conn net.Conn) {
 				log.Printf("Error encoding packet \t Error : %s \n", err)
 				continue
 			}
-			fmt.Printf("The number of available IP's was %v \n", len(server.ipPool))
-			fmt.Printf("Assigning client an IP address of %s \n", clientIP)
-			fmt.Printf("The number of available IP's is now %v \n", len(server.ipPool))
+			log.Printf("The number of available IP's was %v \n", len(server.ipPool))
+			log.Printf("Assigning client an IP address of %s \n", clientIP)
+			log.Printf("The number of available IP's is now %v \n", len(server.ipPool))
 			conn.Write(encodedPacket)
 		}
 	}
@@ -445,10 +445,12 @@ func (server *Server) handleTLS(conn net.Conn) {
 
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
+
 	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", server.Config.ListeningPort))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
+
 	lstnConn, err := net.ListenUDP("udp", lstnAddr)
 	if nil != err {
 		log.Fatalln("Unable to listen on UDP socket:", err)
@@ -456,21 +458,18 @@ func (server *Server) listenAndServe() {
 
 	server.socket = lstnConn
 	defer lstnConn.Close()
-
 	inputBytes := make([]byte, 2048)
 	packet := new(utilities.Packet)
 	for {
 		length, addr, err := lstnConn.ReadFromUDP(inputBytes)
-
 		if err != nil || length == 0 {
-			fmt.Println("Error: ", err)
+			log.Println("Error: ", err)
 			continue
 		}
 
-		fmt.Printf("Received %d bytes from %v \n", length, addr)
+		log.Printf("Received %d bytes from %v \n", length, addr)
 
 		err = utilities.Decode(packet, inputBytes[:length])
-
 		if err != nil {
 			log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
 			continue
@@ -480,17 +479,13 @@ func (server *Server) listenAndServe() {
 		headerFlag := packetHeader.Flag
 
 		switch headerFlag {
-		case utilities.CLIENT_CONFIGURATION:
-			server.registerClient(addr, packet.Payload)
 		case utilities.HEARTBEAT:
 			server.handleHeartbeat(packet.Payload)
 		case utilities.SESSION:
 			server.handleConnection(packet.Payload)
 		default:
-			fmt.Println("Expected headers not found")
+			log.Println("Expected headers not found")
 		}
-		// write to TUN interface
-		//server.tunInterface.ifce.Write(inputBytes[:length])
 	}
 }
 
@@ -523,15 +518,15 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 		return
 	}
 
-	fmt.Printf("Sending session accepted response to peer at %s \n", addr)
+	log.Printf("Sending session accepted response to peer at %s \n", addr)
 	writes, err := server.socket.WriteTo(encodedPacket, addr)
 
 	if err != nil {
 		log.Printf("Error writting bytes to socket, error : %s \n", err)
 	}
-	fmt.Printf("Written %v bytes to UDP socket \n", writes)
-	fmt.Printf("Total number of connections : %v \n", len(server.connectionPool))
-	fmt.Printf("IP  addesses remaining in pool : %v \n", len(server.ipPool))
+	log.Printf("Written %v bytes to UDP socket \n", writes)
+	log.Printf("Total number of connections : %v \n", len(server.connectionPool))
+	log.Printf("IP  addesses remaining in pool : %v \n", len(server.ipPool))
 
 }
 
@@ -539,14 +534,14 @@ func (server *Server) handleHeartbeat(packet []byte) {
 	peer := new(Peer)
 	err := utilities.Decode(peer, packet)
 	if err != nil {
-		fmt.Println("Error decoding peer data", err)
+		log.Println("Error decoding peer data", err)
 	}
 	oldPeer := server.connectionPool[peer.IP]
 	peer.LastHeartbeat = time.Now()
 	peer.Addr = oldPeer.Addr
 	server.connectionPool[peer.IP] = peer
 
-	fmt.Println("Recieved heartbeat from peer at ", peer.IP)
+	log.Println("Recieved heartbeat from peer at ", peer.IP)
 }
 
 func (server *Server) getAvailableIP() (ip string) {
@@ -559,8 +554,8 @@ func (server *Server) getAvailableIP() (ip string) {
 }
 
 func (server *Server) createIPPool() int {
-	fmt.Printf("The CIDR of this network is %s \n", server.network.String())
-	fmt.Printf("Generating IP address for %s network space \n", server.network)
+	log.Printf("The CIDR of this network is %s \n", server.network.String())
+	log.Printf("Generating IP address for %s network space \n", server.network)
 
 	ip := server.tunInterface.Ip
 	for ip := ip.Mask(server.network.Mask); server.network.Contains(ip); constructIP(ip) {
@@ -568,12 +563,12 @@ func (server *Server) createIPPool() int {
 		if server.tunInterface.Ip.String() != ip.String() {
 			server.ipPool = append(server.ipPool, ip.String())
 		} else {
-			fmt.Printf("Skipping the interface id %s \n", ip)
+			log.Printf("Skipping the interface id %s \n", ip)
 		}
 	}
 
 	server.ipPool = server.ipPool[1 : len(server.ipPool)-1]
-	fmt.Printf("Generated %v ip addresses \n", len(server.ipPool))
+	log.Printf("Generated %v ip addresses \n", len(server.ipPool))
 	return len(server.ipPool)
 }
 
@@ -588,12 +583,11 @@ func constructIP(ip net.IP) {
 
 func (server *Server) readIfce() {
 	defer server.waiter.Done()
-	fmt.Println("Handling outgoing connection")
+	log.Println("Handling outgoing connection")
 	mtu := server.tunInterface.Mtu
 	packetSize, err := strconv.Atoi(mtu)
-
 	if err != nil {
-		fmt.Printf("Error converting string to integer %s", err)
+		log.Printf("Error converting string to integer %s", err)
 	}
 
 	packetSize = packetSize - 400
@@ -601,28 +595,26 @@ func (server *Server) readIfce() {
 	for {
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			continue
 		}
 
 		if length > -4 {
 			header, err := ipv4.ParseHeader(buffer[:length])
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				continue
 			}
 			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
 			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
 			encodedPacket, err := utilities.Encode(sendPacket)
-
 			if err != nil {
 				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
 				return
 			}
-			fmt.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 			peer := server.connectionPool[header.Dst.String()]
-			fmt.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
-
+			log.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
 			server.socket.WriteToUDP(encodedPacket, peer.Addr)
 		}
 	}
@@ -638,9 +630,9 @@ func (server *Server) cleanupDeadConnections() {
 		timeDifference := currentTime.Sub(v.LastHeartbeat)
 		elapsedMinutes := timeDifference.Minutes()
 		if elapsedMinutes > 5.00 {
-			fmt.Printf("Removing %s because the hearbeat has been quiet for %d minutes \n", k, elapsedMinutes)
+			log.Printf("Removing %s because the hearbeat has been quiet for %d minutes \n", k, elapsedMinutes)
 			delete(server.connectionPool, k)
-			fmt.Println(len(server.connectionPool))
+			log.Println(len(server.connectionPool))
 		}
 	}
 }

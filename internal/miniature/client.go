@@ -92,7 +92,7 @@ func (client *Client) AuthenticateUser() error {
 	gob.Register(ecdh.Point{})
 	packet := utilities.Packet{PacketHeader: packetHeader, PublicKey: clientPublic}
 	encodedData, err := utilities.Encode(&packet)
-
+	log.Println("Sending handshake to VPN server")
 	n, err := conn.Write(encodedData)
 	if err != nil {
 		log.Println(n, err)
@@ -133,10 +133,10 @@ func (client *Client) AuthenticateUser() error {
 				return err
 			}
 
-			fmt.Println("Client has been assigned ", ipaddr.IpAddr)
+			log.Println("Client has been assigned ", ipaddr.IpAddr)
 			client.ifce = ifce
 
-			fmt.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
+			log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
 
 			command := "route delete 0.0.0.0/0"
 			err = utilities.RunCommand("ip", command)
@@ -180,11 +180,11 @@ func (client *Client) handleIncomingConnections() {
 		packet := new(utilities.Packet)
 		length, err := client.conn.Read(inputBytes)
 		if err != nil || length == 0 {
-			fmt.Printf("Error : %s \n", err)
+			log.Printf("Error : %s \n", err)
 			continue
 		}
 
-		fmt.Printf("Recieved %s bytes \n", length)
+		log.Printf("Recieved %s bytes \n", length)
 		err = utilities.Decode(packet, inputBytes)
 		if err != nil {
 			log.Printf("Error decoding data from the server \t Error : %s \n", err)
@@ -211,9 +211,9 @@ func (client *Client) handleOutgoingConnections() {
 
 	mtu := <-client.sessionChan
 	packetSize, err := strconv.Atoi(mtu)
-	fmt.Println("Handling outgoing connection")
+	log.Println("Handling outgoing connection")
 	if err != nil {
-		fmt.Printf("Error converting string to integer %s", err)
+		log.Printf("Error converting string to integer %s", err)
 	}
 
 	packetSize = packetSize - 400
@@ -221,14 +221,14 @@ func (client *Client) handleOutgoingConnections() {
 	for {
 		length, err := client.ifce.Ifce.Read(buffer)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			continue
 		}
 
 		if length > -4 {
 			header, err := ipv4.ParseHeader(buffer[:length])
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				continue
 			}
 
@@ -240,8 +240,8 @@ func (client *Client) handleOutgoingConnections() {
 				return
 			}
 
-			fmt.Printf("Sending %d bytes to %s \n", len(encodedPacket), header.Dst)
-			fmt.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+			log.Printf("Sending %d bytes to %s \n", len(encodedPacket), header.Dst)
+			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 
 			client.conn.Write(encodedPacket)
 		}
@@ -270,6 +270,6 @@ func (client *Client) HeartBeat() {
 	}
 
 	serverAddress := client.conn.RemoteAddr()
-	fmt.Printf("Sending pulse to server at %s \n", serverAddress.String())
+	log.Printf("Sending pulse to server at %s \n", serverAddress.String())
 	client.conn.Write(encodedPacket)
 }
