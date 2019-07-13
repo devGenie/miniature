@@ -1,9 +1,11 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -48,4 +50,26 @@ func FileToYaml(filepath string, dataStruct interface{}) error {
 
 	yaml.Unmarshal(fileData, dataStruct)
 	return nil
+}
+
+func GetPublicIP(interfaceName string) (ipaddress string, err error) {
+	interfaceByname, err := net.InterfaceByName(interfaceName)
+	if err != nil {
+		return "", err
+	}
+
+	var publicIpAddress string
+	ipAddresses, err := interfaceByname.Addrs()
+	for _, ipAddr := range ipAddresses {
+		addr := ipAddr.(*net.IPNet)
+		if !addr.IP.IsLoopback() {
+			publicIpAddress = addr.IP.String()
+			break
+		}
+	}
+
+	if len(strings.TrimSpace(publicIpAddress)) > 0 {
+		return publicIpAddress, nil
+	}
+	return "", errors.New("Could not find a public IP address")
 }
