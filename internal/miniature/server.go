@@ -476,7 +476,7 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	serverPrivateKey, serverPublicKey, err := serverKEX.GenerateKey(rand.Reader)
 	ip := server.getAvailableIP()
 	clientIPv4 := net.ParseIP(ip)
-	clientIP := utilities.Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.Ip}
+	clientIP := utilities.Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.IP}
 
 	handshakePacket := new(HandshakePacket)
 	handshakePacket.ClientIP = clientIP
@@ -617,10 +617,10 @@ func (server *Server) createIPPool() int {
 	log.Printf("The CIDR of this network is %s \n", server.network.String())
 	log.Printf("Generating IP address for %s network space \n", server.network)
 
-	ip := server.tunInterface.Ip
-	for ip := ip.Mask(server.network.Mask); server.network.Contains(ip); constructIP(ip) {
+	ip := server.tunInterface.IP
+	for ipAddr := ip.Mask(server.network.Mask); server.network.Contains(ip); constructIP(ip) {
 		// skip if ip is the same as the vitual interface's
-		if server.tunInterface.Ip.String() != ip.String() {
+		if server.tunInterface.IP.String() != ipAddr.String() {
 			server.ipPool = append(server.ipPool, ip.String())
 		} else {
 			log.Printf("Skipping the interface id %s \n", ip)
