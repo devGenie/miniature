@@ -2,6 +2,7 @@ package miniature
 
 import (
 	"bufio"
+	"crypto"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
@@ -34,10 +35,16 @@ type Peer struct {
 	Addr *net.UDPAddr
 	// Time since the last hearbeat was got from the client
 	LastHeartbeat time.Time
-	// Peer's certificate file
-	Cert []byte
-	// Peer's public key
-	PublicKey *rsa.PublicKey
+	// Server's private key for the peer
+	ServerSecret []byte
+}
+
+// HandshakePacket represents a handshake packet
+type HandshakePacket struct {
+	// IP address to be assigned to the client
+	ClientIP utilities.Addr
+	// The public key of the server to be used for encryption
+	ServerPublic crypto.PublicKey
 }
 
 // Server represents attributes of the VPN server
@@ -82,7 +89,8 @@ func (server *Server) Run(config ServerConfig) {
 
 	ip, network, err := net.ParseCIDR(config.Network)
 	if err != nil {
-		log.Print("Failed to create interface")
+		log.Println(err)
+		log.Println("Failed to parse cidre")
 		return
 	}
 
@@ -158,9 +166,9 @@ func (server *Server) Run(config ServerConfig) {
 		}
 	}
 
-	server.waiter.Add(2)
+	server.waiter.Add(3)
 	server.createIPPool()
-	server.listenTLS()
+	go server.listenTLS()
 	go server.listenAndServe()
 	go server.readIfce()
 
@@ -386,6 +394,7 @@ func (server *Server) generateCerts(certPath string, privatekeyPath string) (pri
 }
 
 func (server *Server) listenTLS() {
+	defer server.waiter.Done()
 	caFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
 	crtFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
 	privateKey := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.pem")
@@ -432,7 +441,6 @@ func (server *Server) listenTLS() {
 
 func (server *Server) handleTLS(conn net.Conn) {
 	defer conn.Close()
-	p384 := ecdh.Generic(elliptic.P384())
 	buffer := make([]byte, 512)
 	for {
 		_, err := conn.Read(buffer)
@@ -443,56 +451,72 @@ func (server *Server) handleTLS(conn net.Conn) {
 		packet := new(utilities.Packet)
 		utilities.Decode(packet, buffer)
 		if packet.PacketHeader.Flag == utilities.HANDSHAKE {
-			log.Println("Initiating Handshake")
-			clientPublicKey := packet.PublicKey
-			if err := p384.Check(clientPublicKey); err != nil {
-				log.Println("Public Key is not on the curve")
-				continue
-			}
-
-			serverPrivateKey, serverPublicKey, err := p384.GenerateKey(rand.Reader)
+			err = server.handleHandshake(conn, packet.Payload)
 			if err != nil {
-				log.Println(err)
-				continue
+				break
 			}
-
-			secret := p384.ComputeSecret(serverPrivateKey, clientPublicKey)
-			log.Println(secret)
-			packetHeaderData := utilities.PacketHeader{Flag: utilities.HANDSHAKE_ACCEPTED}
-			packetData := utilities.Packet{PacketHeader: packetHeaderData, PublicKey: serverPublicKey}
-			clientIP := server.getAvailableIP()
-			clientIPv4 := net.ParseIP(clientIP)
-			ip := utilities.Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.Ip}
-			encodedIP, err := utilities.Encode(&ip)
-			if err != nil {
-				log.Printf("Error encoding IP address data \t Error : %s \n", err)
-				continue
-			}
-
-			packetData.Payload = encodedIP
-			encodedPacket, err := utilities.Encode(packetData)
-			if err != nil {
-				log.Printf("Error encoding packet \t Error : %s \n", err)
-				continue
-			}
-			log.Printf("The number of available IP's was %v \n", len(server.ipPool))
-			log.Printf("Assigning client an IP address of %s \n", clientIP)
-			log.Printf("The number of available IP's is now %v \n", len(server.ipPool))
-			conn.Write(encodedPacket)
 		}
 	}
+}
+
+func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
+	log.Println("Initiating Handshake")
+	log.Println("Generating private key for this user session")
+
+	gob.Register(rsa.PublicKey{})
+	clientPublicKey := new(ecdh.Point)
+	err := utilities.Decode(clientPublicKey, payload)
+	if err != nil {
+		log.Println(payload)
+		log.Println("Failed to decode client public key")
+		return err
+	}
+
+	serverKEX := ecdh.Generic(elliptic.P256())
+	serverPrivateKey, serverPublicKey, err := serverKEX.GenerateKey(rand.Reader)
+	ip := server.getAvailableIP()
+	clientIPv4 := net.ParseIP(ip)
+	clientIP := utilities.Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.Ip}
+
+	handshakePacket := new(HandshakePacket)
+	handshakePacket.ClientIP = clientIP
+	handshakePacket.ServerPublic = serverPublicKey
+	packetHeaderData := utilities.PacketHeader{Flag: utilities.HANDSHAKE_ACCEPTED}
+
+	handshakePacketBytes, err := utilities.Encode(handshakePacket)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	packetData := utilities.Packet{PacketHeader: packetHeaderData, Payload: handshakePacketBytes}
+	encodedPacket, err := utilities.Encode(packetData)
+	if err != nil {
+		log.Printf("Error encoding packet \t Error : %s \n", err)
+		return err
+	}
+	_, err = conn.Write(encodedPacket)
+	if err != nil {
+		return err
+	}
+	peer := new(Peer)
+	peer.IP = ip
+	peer.ServerSecret = serverKEX.ComputeSecret(serverPrivateKey, clientPublicKey)
+	server.connectionPool[peer.IP] = peer
+	log.Printf("Assigning client an IP address of %s \n", ip)
+	log.Printf("The number of available IP's is now %v \n", len(server.ipPool))
+	return nil
 }
 
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
 
-	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", server.Config.ListeningPort))
+	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("0.0.0.0:%v", server.Config.ListeningPort))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
 
 	lstnConn, err := net.ListenUDP("udp", lstnAddr)
-	if nil != err {
+	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
 
@@ -535,9 +559,7 @@ func (server *Server) handleConnection(packet []byte) {
 
 func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 	peer := new(Peer)
-
 	err := utilities.Decode(peer, payload)
-
 	if err != nil {
 		log.Printf("Error decoding peer data \t Error : %s \n", err)
 		return
@@ -546,7 +568,6 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 	fmt.Printf("Registering client with IP address %s \n", peer.IP)
 	peer.Addr = addr
 	server.connectionPool[peer.IP] = peer
-
 	packet := new(utilities.Packet)
 	packet.PacketHeader = utilities.PacketHeader{Flag: utilities.SESSION_ACCEPTED}
 	packet.Payload = make([]byte, 0)
@@ -567,7 +588,6 @@ func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
 	log.Printf("Written %v bytes to UDP socket \n", writes)
 	log.Printf("Total number of connections : %v \n", len(server.connectionPool))
 	log.Printf("IP  addesses remaining in pool : %v \n", len(server.ipPool))
-
 }
 
 func (server *Server) handleHeartbeat(packet []byte) {
@@ -670,7 +690,7 @@ func (server *Server) cleanupDeadConnections() {
 		timeDifference := currentTime.Sub(v.LastHeartbeat)
 		elapsedMinutes := timeDifference.Minutes()
 		if elapsedMinutes > 5.00 {
-			log.Printf("Removing %s because the hearbeat has been quiet for %d minutes \n", k, elapsedMinutes)
+			log.Printf("Removing %s because the hearbeat has been quiet for %f minutes \n", k, elapsedMinutes)
 			delete(server.connectionPool, k)
 			log.Println(len(server.connectionPool))
 		}

@@ -1,12 +1,18 @@
 package main
 
 import (
+	"encoding/gob"
 	"flag"
 	"log"
 
+	"github.com/aead/ecdh"
 	utilities "github.com/devgenie/miniature/internal/common"
 	"github.com/devgenie/miniature/internal/miniature"
 )
+
+func init() {
+	gob.Register(ecdh.Point{})
+}
 
 func main() {
 	configFile := flag.String("config", "/etc/miniature/config.yml", "Client configuration file")
