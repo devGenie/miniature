@@ -164,7 +164,7 @@ func (client *Client) AuthenticateUser() error {
 				log.Printf("Error deleting route message: %s \n", err)
 			}
 
-			command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", client.ifce.Ip.String(), client.ifce.Ifce.Name())
+			command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", client.ifce.IP.String(), client.ifce.Ifce.Name())
 			err = utilities.RunCommand("ip", command)
 			if err != nil {
 				log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
@@ -270,7 +270,7 @@ func (client *Client) StartHeartBeat() {
 // HeartBeat sends the client's heartbeat to the server
 func (client *Client) HeartBeat() {
 	peer := new(Peer)
-	peer.IP = client.ifce.Ip.String()
+	peer.IP = client.ifce.IP.String()
 	encodedPeer, err := utilities.Encode(&peer)
 	if err != nil {
 		log.Printf("An error occured while encording peer data \t Error : %s \n", err)
