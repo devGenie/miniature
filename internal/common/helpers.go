@@ -68,6 +68,9 @@ func GetPublicIP(interfaceName string) (ipaddress string, err error) {
 
 	var publicIPAddress string
 	ipAddresses, err := interfaceByname.Addrs()
+	if err != nil {
+		return "", err
+	}
 	for _, ipAddr := range ipAddresses {
 		addr := ipAddr.(*net.IPNet)
 		if !addr.IP.IsLoopback() {

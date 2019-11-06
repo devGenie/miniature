@@ -19,12 +19,11 @@ import (
 
 // Client represents a client connecting to the VPN server
 type Client struct {
-	ifce        *utilities.Tun
-	conn        *net.UDPConn
-	waiter      sync.WaitGroup
-	sessionChan chan string
-	config      ClientConfig
-	secret      []byte
+	ifce   *utilities.Tun
+	conn   *net.UDPConn
+	waiter sync.WaitGroup
+	config ClientConfig
+	secret []byte
 }
 
 // ClientConfig holds the client configuration loaded from the yml configuration file
@@ -108,6 +107,10 @@ func (client *Client) AuthenticateUser() error {
 
 	packet := utilities.Packet{PacketHeader: packetHeader, Payload: publicKeyBytes}
 	encodedData, err := utilities.Encode(&packet)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
 	log.Println("Sending handshake to VPN server")
 	n, err := conn.Write(encodedData)
 	if err != nil {
@@ -123,7 +126,11 @@ func (client *Client) AuthenticateUser() error {
 			return err
 		}
 		packetReply := new(utilities.Packet)
-		utilities.Decode(packetReply, buf)
+		err = utilities.Decode(packetReply, buf)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
 
 		if packetReply.PacketHeader.Flag == utilities.HANDSHAKE_ACCEPTED {
 			log.Println("Server Handshake accepted, configuring client interfaces")
@@ -221,7 +228,10 @@ func (client *Client) handleIncomingConnections() {
 }
 
 func (client *Client) writeToIfce(packet []byte) {
-	client.ifce.Ifce.Write(packet)
+	_, err := client.ifce.Ifce.Write(packet)
+	if err != nil {
+		return
+	}
 }
 
 func (client *Client) handleOutgoingConnections() {
@@ -264,7 +274,10 @@ func (client *Client) handleOutgoingConnections() {
 
 			log.Printf("Sending %d bytes to %s \n", len(encodedPacket), header.Dst)
 			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-			client.conn.Write(encodedPacket)
+			_, err = client.conn.Write(encodedPacket)
+			if err != nil {
+				return
+			}
 		}
 	}
 }
@@ -301,5 +314,8 @@ func (client *Client) HeartBeat() {
 	serverAddress := client.conn.RemoteAddr()
 	log.Printf("Sending pulse to server at %s \n", serverAddress.String())
 
-	client.conn.Write(encodedPacket)
+	_, err = client.conn.Write(encodedPacket)
+	if err != nil {
+		return
+	}
 }

@@ -103,18 +103,33 @@ func (server *Server) Run(config ServerConfig) {
 
 	// route client traffic through tun interface
 	command := fmt.Sprintf("route add %s dev %s", network.String(), ifce.Ifce.Name())
-	utilities.RunCommand("ip", command)
+	err = utilities.RunCommand("ip", command)
+	if err != nil {
+		return
+	}
 
 	gatewayIfce, _, err := utilities.GetDefaultGateway()
+	if err != nil {
+		return
+	}
 
 	command = fmt.Sprintf("-A FORWARD -i %s -o %s -m state --state RELATED,ESTABLISHED -j ACCEPT", ifce.Ifce.Name(), gatewayIfce)
-	utilities.RunCommand("iptables", command)
+	err = utilities.RunCommand("iptables", command)
+	if err != nil {
+		return
+	}
 
 	command = fmt.Sprintf("-A FORWARD -i %s -o %s -j ACCEPT", gatewayIfce, ifce.Ifce.Name())
-	utilities.RunCommand("iptables", command)
+	err = utilities.RunCommand("iptables", command)
+	if err != nil {
+		return
+	}
 
 	command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j MASQUERADE", gatewayIfce)
-	utilities.RunCommand("iptables", command)
+	err = utilities.RunCommand("iptables", command)
+	if err != nil {
+		return
+	}
 
 	server.tunInterface = ifce
 	server.network = network
@@ -219,7 +234,7 @@ func (server *Server) CreateClientConfig() (yamlConfiguration string, errorMessa
 func (server *Server) createCA() error {
 	_, err := os.Stat(server.Config.CertificatesDirectory)
 	if os.IsNotExist(err) {
-		err = os.MkdirAll(server.Config.CertificatesDirectory, 700)
+		err = os.MkdirAll(server.Config.CertificatesDirectory, 0700)
 		if err != nil {
 			return err
 		}
@@ -450,7 +465,10 @@ func (server *Server) handleTLS(conn net.Conn) {
 			break
 		}
 		packet := new(utilities.Packet)
-		utilities.Decode(packet, buffer)
+		err = utilities.Decode(packet, buffer)
+		if err != nil {
+			break
+		}
 		if packet.PacketHeader.Flag == utilities.HANDSHAKE {
 			err = server.handleHandshake(conn, packet.Payload)
 			if err != nil {
@@ -475,6 +493,10 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 
 	serverKEX := ecdh.Generic(elliptic.P256())
 	serverPrivateKey, serverPublicKey, err := serverKEX.GenerateKey(rand.Reader)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
 	ip := server.getAvailableIP()
 	clientIPv4 := net.ParseIP(ip)
 	clientIP := utilities.Addr{IPAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.IP}
@@ -563,7 +585,10 @@ func (server *Server) listenAndServe() {
 }
 
 func (server *Server) handleConnection(packet []byte) {
-	server.tunInterface.Ifce.Write(packet)
+	_, err := server.tunInterface.Ifce.Write(packet)
+	if err != nil {
+		return
+	}
 }
 
 func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
@@ -685,7 +710,10 @@ func (server *Server) readIfce() {
 			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 			peer := server.connectionPool[header.Dst.String()]
 			log.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
-			server.socket.WriteToUDP(encodedPacket, peer.Addr)
+			_, err = server.socket.WriteToUDP(encodedPacket, peer.Addr)
+			if err != nil {
+				return
+			}
 		}
 	}
 }
