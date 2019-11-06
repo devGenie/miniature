@@ -55,6 +55,7 @@ type TCP struct {
 	TCPFin    []byte
 }
 
+// Decode recieves data as a byte array and decodes it to the passed dataStructure
 func Decode(dataStructure interface{}, data []byte) error {
 	buffer := bytes.NewBuffer(data)
 	decoder := gob.NewDecoder(buffer)
@@ -68,6 +69,7 @@ func Decode(dataStructure interface{}, data []byte) error {
 	return nil
 }
 
+// Encode recieves a dataStructure to encode and returns an encoded byte array
 func Encode(dataStructure interface{}) (encoded []byte, err error) {
 	var buffer bytes.Buffer
 	encoder := gob.NewEncoder(&buffer)
