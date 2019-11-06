@@ -41,19 +41,22 @@ func RunCron(name string, cronString string, cronFunc func()) {
 func FileToYaml(filepath string, dataStruct interface{}) error {
 	file, err := os.Open(filepath)
 	if err != nil {
+		file.Close()
 		return err
 	}
 
-	defer file.Close()
-
 	fileData, err := ioutil.ReadAll(file)
 	if err != nil {
-		return nil
+		file.Close()
+		return err
 	}
 
 	err = yaml.Unmarshal(fileData, dataStruct)
-	fmt.Println(err)
-	return nil
+	if err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 // GetPublicIP gets the public ip of the host
