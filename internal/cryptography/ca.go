@@ -15,6 +15,7 @@ import (
 	"time"
 )
 
+// Cert represents a certificate details
 type Cert struct {
 	IsCA               bool
 	Country            string
@@ -29,6 +30,7 @@ type Cert struct {
 	ExpiryDate         string
 }
 
+// GenerateTemplate creates a certificate template
 func (cert *Cert) GenerateTemplate(privateKey *rsa.PrivateKey) (certificateTemplate *x509.Certificate) {
 	mathrand.Seed(time.Now().UnixNano())
 	randomInteger := mathrand.Intn(math.MaxInt64)
@@ -62,6 +64,7 @@ func (cert *Cert) GenerateTemplate(privateKey *rsa.PrivateKey) (certificateTempl
 	return template
 }
 
+// GenerateCA generates a certificate authority
 func (cert *Cert) GenerateCA() (privatekey *rsa.PrivateKey, publickey *rsa.PublicKey, certificate []byte, err error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -78,6 +81,7 @@ func (cert *Cert) GenerateCA() (privatekey *rsa.PrivateKey, publickey *rsa.Publi
 	return privateKey, publicKey, caCert, nil
 }
 
+// GenerateClientCertificate generates client certificate from a certificate template, parent template and private key
 func (cert *Cert) GenerateClientCertificate(caTemplate *x509.Certificate, parentTemplate *x509.Certificate, caPrivateKey *rsa.PrivateKey) (privatekey *rsa.PrivateKey, publickey *rsa.PublicKey, certificate []byte, err error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -101,6 +105,8 @@ func (cert *Cert) generateCert(caTemplate *x509.Certificate, parentTemplate *x50
 	return certBody, nil
 }
 
+// VerifyCertificate recieves a certificate and veriufies it against the root certificate
+// returning an error on failure and nil on success
 func VerifyCertificate(rootPEM []byte, certPEM []byte) error {
 	roots, _ := x509.SystemCertPool()
 	if roots == nil {
@@ -133,8 +139,12 @@ func VerifyCertificate(rootPEM []byte, certPEM []byte) error {
 	return nil
 }
 
+// HashBigInt creates a random serial number
 func HashBigInt(bigInt *big.Int) []byte {
 	hash := sha1.New()
-	hash.Write(bigInt.Bytes())
+	_, err := hash.Write(bigInt.Bytes())
+	if err != nil {
+		return nil
+	}
 	return hash.Sum(nil)
 }
