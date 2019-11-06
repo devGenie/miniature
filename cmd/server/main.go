@@ -17,7 +17,6 @@ func startServer(serverConfig string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println(config.CertificatesDirectory)
 	} else {
 		config.CertificatesDirectory = "/etc/miniature/certs"
 		config.Network = "10.2.0.0/24"
