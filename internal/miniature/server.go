@@ -25,6 +25,7 @@ import (
 	"github.com/aead/ecdh"
 	utilities "github.com/devgenie/miniature/internal/common"
 	"github.com/devgenie/miniature/internal/cryptography"
+	codec "github.com/devgenie/miniature/internal/cryptography"
 )
 
 // Peer represents a client connected to the VPN server
@@ -476,7 +477,7 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	serverPrivateKey, serverPublicKey, err := serverKEX.GenerateKey(rand.Reader)
 	ip := server.getAvailableIP()
 	clientIPv4 := net.ParseIP(ip)
-	clientIP := utilities.Addr{IpAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.IP}
+	clientIP := utilities.Addr{IPAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.IP}
 
 	handshakePacket := new(HandshakePacket)
 	handshakePacket.ClientIP = clientIP
@@ -541,12 +542,20 @@ func (server *Server) listenAndServe() {
 
 		packetHeader := packet.PacketHeader
 		headerFlag := packetHeader.Flag
+		nonce := packetHeader.Nonce
+		log.Println(nonce)
+		peer := server.connectionPool[packetHeader.Src]
+		decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
+		if err != nil {
+			log.Println("Failed to decrypt data")
+			continue
+		}
 
 		switch headerFlag {
 		case utilities.HEARTBEAT:
-			server.handleHeartbeat(packet.Payload)
+			server.handleHeartbeat(decryptedPayload)
 		case utilities.SESSION:
-			server.handleConnection(packet.Payload)
+			server.handleConnection(decryptedPayload)
 		default:
 			log.Println("Expected headers not found")
 		}
@@ -599,6 +608,7 @@ func (server *Server) handleHeartbeat(packet []byte) {
 	oldPeer := server.connectionPool[peer.IP]
 	peer.LastHeartbeat = time.Now()
 	peer.Addr = oldPeer.Addr
+	peer.ServerSecret = oldPeer.ServerSecret
 	server.connectionPool[peer.IP] = peer
 
 	log.Println("Recieved heartbeat from peer at ", peer.IP)

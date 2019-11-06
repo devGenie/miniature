@@ -13,6 +13,7 @@ import (
 
 	"github.com/aead/ecdh"
 	utilities "github.com/devgenie/miniature/internal/common"
+	codec "github.com/devgenie/miniature/internal/cryptography"
 	"golang.org/x/net/ipv4"
 )
 
@@ -139,7 +140,7 @@ func (client *Client) AuthenticateUser() error {
 				log.Println("Server's public key is not on the elliptic curve")
 			}
 			client.secret = p256.ComputeSecret(clientPrivatekey, handshakePacket.ServerPublic)
-			log.Println(client.secret)
+			log.Println(len(client.secret))
 
 			ifce, err := utilities.NewInterface()
 			if err != nil {
@@ -147,13 +148,13 @@ func (client *Client) AuthenticateUser() error {
 				return err
 			}
 
-			err = ifce.Configure(handshakePacket.ClientIP.IpAddr, handshakePacket.ClientIP.Gateway, "1400")
+			err = ifce.Configure(handshakePacket.ClientIP.IPAddr, handshakePacket.ClientIP.Gateway, "1400")
 			if err != nil {
 				log.Printf("Error: %s \n", err)
 				return err
 			}
 
-			log.Println("Client has been assigned ", handshakePacket.ClientIP.IpAddr)
+			log.Println("Client has been assigned ", handshakePacket.ClientIP.IPAddr)
 			client.ifce = ifce
 
 			log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
@@ -247,8 +248,14 @@ func (client *Client) handleOutgoingConnections() {
 				continue
 			}
 
-			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
-			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
+			encryptedData, nonce, err := codec.Encrypt(client.secret, buffer[:length])
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
+			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
 			encodedPacket, err := utilities.Encode(sendPacket)
 			if err != nil {
 				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
@@ -277,8 +284,14 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
-	packetHeader := utilities.PacketHeader{Flag: utilities.HEARTBEAT}
-	sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encodedPeer}
+	encryptedData, nonce, err := codec.Encrypt(client.secret, encodedPeer)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	packetHeader := utilities.PacketHeader{Flag: utilities.HEARTBEAT, Nonce: nonce, Src: client.ifce.IP.String()}
+	sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
 	encodedPacket, err := utilities.Encode(sendPacket)
 	if err != nil {
 		log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
@@ -287,5 +300,6 @@ func (client *Client) HeartBeat() {
 
 	serverAddress := client.conn.RemoteAddr()
 	log.Printf("Sending pulse to server at %s \n", serverAddress.String())
+
 	client.conn.Write(encodedPacket)
 }
