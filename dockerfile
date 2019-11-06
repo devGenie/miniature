@@ -8,5 +8,3 @@ RUN mkdir /miniature
 COPY . /miniature
 WORKDIR /miniature
 RUN export GO111MODULE=on
-RUN go mod init github.com/devgenie/miniature
-RUN CGO_ENABLED=1 GOOS=linux go build

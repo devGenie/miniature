@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// RunCommand is a wrapper to easily run linux commands
 func RunCommand(command, arguments string) error {
 	log.Printf("Issuing command: %s %s \n", command, arguments)
 	commandArguments := strings.Split(arguments, " ")
@@ -22,6 +23,7 @@ func RunCommand(command, arguments string) error {
 	return err
 }
 
+// RunCron runs cron jobs
 func RunCron(name string, cronString string, cronFunc func()) {
 	cronjob := cron.New()
 	err := cronjob.AddFunc(cronString, cronFunc)
@@ -35,41 +37,50 @@ func RunCron(name string, cronString string, cronFunc func()) {
 	fmt.Printf("Cron scheduled to run on %s \n", entry[0].Next)
 }
 
+// FileToYaml unmarshals files to the data stucture specified
 func FileToYaml(filepath string, dataStruct interface{}) error {
 	file, err := os.Open(filepath)
 	if err != nil {
+		file.Close()
 		return err
 	}
 
-	defer file.Close()
-
 	fileData, err := ioutil.ReadAll(file)
 	if err != nil {
-		return nil
+		file.Close()
+		return err
 	}
 
-	yaml.Unmarshal(fileData, dataStruct)
-	return nil
+	err = yaml.Unmarshal(fileData, dataStruct)
+	if err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
 }
 
+// GetPublicIP gets the public ip of the host
 func GetPublicIP(interfaceName string) (ipaddress string, err error) {
 	interfaceByname, err := net.InterfaceByName(interfaceName)
 	if err != nil {
 		return "", err
 	}
 
-	var publicIpAddress string
+	var publicIPAddress string
 	ipAddresses, err := interfaceByname.Addrs()
+	if err != nil {
+		return "", err
+	}
 	for _, ipAddr := range ipAddresses {
 		addr := ipAddr.(*net.IPNet)
 		if !addr.IP.IsLoopback() {
-			publicIpAddress = addr.IP.String()
+			publicIPAddress = addr.IP.String()
 			break
 		}
 	}
 
-	if len(strings.TrimSpace(publicIpAddress)) > 0 {
-		return publicIpAddress, nil
+	if len(strings.TrimSpace(publicIPAddress)) > 0 {
+		return publicIPAddress, nil
 	}
 	return "", errors.New("Could not find a public IP address")
 }
