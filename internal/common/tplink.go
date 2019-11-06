@@ -24,29 +24,35 @@ const (
 	SESSION byte = 0x07
 )
 
+// Addr represents a HTTP address
 type Addr struct {
-	IpAddr  net.IP
+	IPAddr  net.IP
 	Network net.IPNet
 	Gateway net.IP
 }
 
+// PacketHeader represents header data in a packet
 type PacketHeader struct {
-	Flag byte
-	Plen uint16
+	Src   string
+	Flag  byte
+	Plen  uint16
+	Nonce []byte
 }
 
+// Packet is a structure representing a packet
 type Packet struct {
 	PacketHeader
 	Payload []byte
 }
 
+// TCP is a structure of a tcp datagram
 type TCP struct {
-	Tcp_src     string
-	Tcp_dst     string
-	Tcp_seq_num int
-	Tcp_ack_num int
-	Tcp_hdr_len int
-	Tcp_fin     []byte
+	TCPSrc    string
+	TCPDst    string
+	TCPSeqNum int
+	TCPackNum int
+	TCPHdrLen int
+	TCPFin    []byte
 }
 
 func Decode(dataStructure interface{}, data []byte) error {
