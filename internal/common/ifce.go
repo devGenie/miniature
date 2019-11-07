@@ -12,15 +12,17 @@ import (
 	"github.com/songgao/water"
 )
 
+// Tun represents a Tun interface
 type Tun struct {
 	Ifce       *water.Interface
 	Name       string
-	Ip         net.IP
+	IP         net.IP
 	Remote     net.IP
 	SubnetMask net.IPMask
 	Mtu        string
 }
 
+// NewInterface creates a new Tun interface
 func NewInterface() (*Tun, error) {
 	config := water.Config{
 		DeviceType: water.TUN,
@@ -35,6 +37,7 @@ func NewInterface() (*Tun, error) {
 	return ifce, nil
 }
 
+// Configure configures the Tun interface
 func (tun *Tun) Configure(ifceAddr net.IP, remote net.IP, mtu string) error {
 	ipaddr := ifceAddr.String()
 	command := fmt.Sprintf("link set dev %s mtu %s", tun.Ifce.Name(), mtu)
@@ -58,10 +61,11 @@ func (tun *Tun) Configure(ifceAddr net.IP, remote net.IP, mtu string) error {
 		log.Printf("Error configuring interface %s, message: %s \n", tun.Ifce.Name(), err)
 		return err
 	}
-	tun.Ip = ifceAddr
+	tun.IP = ifceAddr
 	return nil
 }
 
+// GetDefaultGateway returns the default gateway on the host
 func GetDefaultGateway() (ifaceName string, gateway string, err error) {
 	routeFile, err := os.Open("/proc/net/route")
 	if err != nil {
