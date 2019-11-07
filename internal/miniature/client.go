@@ -42,18 +42,17 @@ type ClientConfig struct {
 
 // Run starts the vpn client passing the ClientConfig as a parameter
 func (client *Client) Run(config ClientConfig) error {
-	_, err := utilities.NewInterface()
-	if err != nil {
-		log.Printf("Failed to create interface")
-	}
 	client.config = config
-	err = client.AuthenticateUser()
-	if err != nil {
+	if err := client.AuthenticateUser(); err != nil {
 		log.Println(err)
 		return err
 	}
 
-	client.listen(client.config.ServerAddress, strconv.Itoa(client.config.ListeningPort))
+	if err := client.listen(client.config.ServerAddress,
+		strconv.Itoa(client.config.ListeningPort)); err != nil {
+		client.conn.Close()
+		return err
+	}
 	defer client.conn.Close()
 
 	client.waiter.Add(2)
@@ -91,7 +90,6 @@ func (client *Client) AuthenticateUser() error {
 	p256 := ecdh.Generic(elliptic.P256())
 	clientPrivatekey, clientPublicKey, err := p256.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -102,27 +100,24 @@ func (client *Client) AuthenticateUser() error {
 	packetHeader := utilities.PacketHeader{Flag: utilities.HANDSHAKE}
 	publicKeyBytes, err := utilities.Encode(clientPublicKey)
 	if err != nil {
-		log.Println("Failed to encode public key")
+		return err
 	}
 
 	packet := utilities.Packet{PacketHeader: packetHeader, Payload: publicKeyBytes}
 	encodedData, err := utilities.Encode(&packet)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	log.Println("Sending handshake to VPN server")
-	n, err := conn.Write(encodedData)
+	_, err = conn.Write(encodedData)
 	if err != nil {
-		log.Println(n, err)
 		return err
 	}
 
 	buf := make([]byte, 512)
 	for {
-		n, err = conn.Read(buf)
+		_, err := conn.Read(buf)
 		if err != nil {
-			log.Println(n, err)
 			return err
 		}
 		packetReply := new(utilities.Packet)
@@ -137,27 +132,23 @@ func (client *Client) AuthenticateUser() error {
 			handshakePacket := new(HandshakePacket)
 			err := utilities.Decode(handshakePacket, packetReply.Payload)
 			if err != nil {
-				log.Println(err)
 				return err
 			}
 
 			err = p256.Check(handshakePacket.ServerPublic)
 			if err != nil {
-				log.Println(err)
-				log.Println("Server's public key is not on the elliptic curve")
+				return err
 			}
 			client.secret = p256.ComputeSecret(clientPrivatekey, handshakePacket.ServerPublic)
-			log.Println(len(client.secret))
 
 			ifce, err := utilities.NewInterface()
 			if err != nil {
-				log.Println("Error creating tun interface")
 				return err
 			}
 
-			err = ifce.Configure(handshakePacket.ClientIP.IPAddr, handshakePacket.ClientIP.Gateway, "1400")
-			if err != nil {
-				log.Printf("Error: %s \n", err)
+			if err = ifce.Configure(handshakePacket.ClientIP.IPAddr,
+				handshakePacket.ClientIP.Gateway,
+				"1400"); err != nil {
 				return err
 			}
 
@@ -167,14 +158,12 @@ func (client *Client) AuthenticateUser() error {
 			log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
 
 			command := "route delete 0.0.0.0/0"
-			err = utilities.RunCommand("ip", command)
-			if err != nil {
+			if err = utilities.RunCommand("ip", command); err != nil {
 				log.Printf("Error deleting route message: %s \n", err)
 			}
 
 			command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", client.ifce.IP.String(), client.ifce.Ifce.Name())
-			err = utilities.RunCommand("ip", command)
-			if err != nil {
+			if err = utilities.RunCommand("ip", command); err != nil {
 				log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
 			}
 			client.StartHeartBeat()
@@ -183,7 +172,7 @@ func (client *Client) AuthenticateUser() error {
 	}
 }
 
-func (client *Client) listen(server, port string) {
+func (client *Client) listen(server, port string) error {
 	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%s", server, port))
 	if err != nil {
 		log.Println("Failed to establish connection with the server")
@@ -192,8 +181,10 @@ func (client *Client) listen(server, port string) {
 	conn, err := net.DialUDP("udp", nil, serverAddr)
 	if err != nil {
 		log.Printf("Failed to connect to %s", server)
+		return err
 	}
 	client.conn = conn
+	return nil
 }
 
 func (client *Client) handleIncomingConnections() {
@@ -269,14 +260,14 @@ func (client *Client) handleOutgoingConnections() {
 			encodedPacket, err := utilities.Encode(sendPacket)
 			if err != nil {
 				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
-				return
+				break
 			}
 
 			log.Printf("Sending %d bytes to %s \n", len(encodedPacket), header.Dst)
 			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 			_, err = client.conn.Write(encodedPacket)
 			if err != nil {
-				return
+				break
 			}
 		}
 	}
