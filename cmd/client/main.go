@@ -25,7 +25,10 @@ func main() {
 			log.Fatal(err)
 		}
 		vpnClient := new(miniature.Client)
-		vpnClient.Run(*clientConfig)
+		err = vpnClient.Run(*clientConfig)
+		if err != nil {
+			log.Fatal(err)
+		}
 	} else {
 		log.Fatal("Please provide path to config file")
 	}
