@@ -595,37 +595,37 @@ func (server *Server) handleConnection(packet []byte) {
 	}
 }
 
-func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
-	peer := new(Peer)
-	err := utilities.Decode(peer, payload)
-	if err != nil {
-		log.Printf("Error decoding peer data \t Error : %s \n", err)
-		return
-	}
+// func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
+// 	peer := new(Peer)
+// 	err := utilities.Decode(peer, payload)
+// 	if err != nil {
+// 		log.Printf("Error decoding peer data \t Error : %s \n", err)
+// 		return
+// 	}
 
-	fmt.Printf("Registering client with IP address %s \n", peer.IP)
-	server.connectionPool.NewPeer(addr)
-	packet := new(utilities.Packet)
-	packet.PacketHeader = utilities.PacketHeader{Flag: utilities.SESSION_ACCEPTED}
-	packet.Payload = make([]byte, 0)
+// 	fmt.Printf("Registering client with IP address %s \n", peer.IP)
+// 	server.connectionPool.NewPeer(addr)
+// 	packet := new(utilities.Packet)
+// 	packet.PacketHeader = utilities.PacketHeader{Flag: utilities.SESSION_ACCEPTED}
+// 	packet.Payload = make([]byte, 0)
 
-	encodedPacket, err := utilities.Encode(packet)
+// 	encodedPacket, err := utilities.Encode(packet)
 
-	if err != nil {
-		log.Printf("Error encoding peer packet \t Error : %s \n", err)
-		return
-	}
+// 	if err != nil {
+// 		log.Printf("Error encoding peer packet \t Error : %s \n", err)
+// 		return
+// 	}
 
-	log.Printf("Sending session accepted response to peer at %s \n", addr)
-	writes, err := server.socket.WriteTo(encodedPacket, addr)
+// 	log.Printf("Sending session accepted response to peer at %s \n", addr)
+// 	writes, err := server.socket.WriteTo(encodedPacket, addr)
 
-	if err != nil {
-		log.Printf("Error writting bytes to socket, error : %s \n", err)
-	}
-	log.Printf("Written %v bytes to UDP socket \n", writes)
-	log.Printf("Total number of connections : %v \n", server.connectionPool.Size())
-	log.Printf("IP  addesses remaining in pool : %v \n", len(server.ipPool))
-}
+// 	if err != nil {
+// 		log.Printf("Error writting bytes to socket, error : %s \n", err)
+// 	}
+// 	log.Printf("Written %v bytes to UDP socket \n", writes)
+// 	log.Printf("Total number of connections : %v \n", server.connectionPool.Size())
+// 	log.Printf("IP  addesses remaining in pool : %v \n", len(server.ipPool))
+// }
 
 func (server *Server) handleHeartbeat(packet []byte) {
 	peer := new(Peer)
