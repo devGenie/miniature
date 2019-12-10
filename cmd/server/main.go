@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 
@@ -39,9 +38,12 @@ func main() {
 		case "newclient":
 			serverConfig := new(miniature.ServerConfig)
 			if len(os.Args) == 3 {
-				clientConfig.Parse(os.Args[2:])
+				err := clientConfig.Parse(os.Args[2:])
+				if err != nil {
+					log.Fatal(err)
+				}
 				serverConfigYamlPath := *configFile
-				err := utilities.FileToYaml(serverConfigYamlPath, serverConfig)
+				err = utilities.FileToYaml(serverConfigYamlPath, serverConfig)
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -51,15 +53,17 @@ func main() {
 			}
 			server := new(miniature.Server)
 			server.Config = *serverConfig
-			config, err := server.CreateClientConfig()
+			_, err := server.CreateClientConfig()
 			if err != nil {
 				log.Fatal(err)
 				break
 			}
-			fmt.Println(config)
 		case "run":
 			if len(os.Args) == 3 {
-				runFlag.Parse(os.Args[2:])
+				err := runFlag.Parse(os.Args[2:])
+				if err != nil {
+					log.Fatal(err)
+				}
 				startServer(*serverConfigFlag)
 			} else {
 				startServer("")
