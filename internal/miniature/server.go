@@ -134,13 +134,14 @@ func (server *Server) Run(config ServerConfig) {
 	server.tunInterface = ifce
 	server.network = network
 	server.gatewayIfce = gatewayIfce
+
+	log.Printf("Generating IP address for %s network space \n", server.network)
 	connectionPool := InitNodePool(server.tunInterface.IP, *server.network)
 	server.connectionPool = connectionPool
 
 	log.Printf("The CIDR of this network is %s \n", server.network)
-	log.Printf("Generating IP address for %s network space \n", server.network)
 	log.Printf("Tun interface assigned ip address %s \n", server.tunInterface.IP)
-	log.Printf("Generated %v ip addresses \n", connectionPool.Size())
+	log.Printf("Generated %v ip addresses \n", connectionPool.AvailableAddressesCount())
 
 	certExists := true
 
@@ -415,6 +416,7 @@ func (server *Server) generateCerts(certPath string, privatekeyPath string) (pri
 }
 
 func (server *Server) listenTLS() {
+	log.Println("handling ksdsdksjfskj")
 	defer server.waiter.Done()
 	caFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
 	crtFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
@@ -448,10 +450,13 @@ func (server *Server) listenTLS() {
 		return
 	}
 
+	log.Println(listeningConn.Addr())
 	defer listeningConn.Close()
 	gob.Register(ecdh.Point{})
+	log.Println("kskfskfskfskf_____")
 	for {
 		conn, err := listeningConn.Accept()
+		log.Println("kskfskfskfskf")
 		if err != nil {
 			log.Println(err)
 			continue
@@ -461,6 +466,7 @@ func (server *Server) listenTLS() {
 }
 
 func (server *Server) handleTLS(conn net.Conn) {
+	log.Println("Hadling tls")
 	defer conn.Close()
 	buffer := make([]byte, 512)
 	for {
@@ -502,8 +508,8 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 		log.Println(err)
 		return err
 	}
-	ip := server.getAvailableIP()
-	clientIPv4 := net.ParseIP(ip)
+	peer := server.connectionPool.NewPeer()
+	clientIPv4 := net.ParseIP(peer.IP)
 	clientIP := utilities.Addr{IPAddr: clientIPv4, Network: *server.network, Gateway: server.tunInterface.IP}
 
 	handshakePacket := new(HandshakePacket)
@@ -526,11 +532,9 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	if err != nil {
 		return err
 	}
-	peer := new(Peer)
-	peer.IP = ip
+
 	peer.ServerSecret = serverKEX.ComputeSecret(serverPrivateKey, clientPublicKey)
-	server.connectionPool.Update(ip, *peer)
-	log.Printf("Assigning client an IP address of %s \n", ip)
+	log.Printf("Assigning client an IP address of %s \n", peer.IP)
 	log.Printf("The number of available IP's is now %v \n", len(server.ipPool))
 	return nil
 }
@@ -639,15 +643,6 @@ func (server *Server) handleHeartbeat(packet []byte) {
 	peer.ServerSecret = oldPeer.ServerSecret
 	server.connectionPool.Update(oldPeer.IP, *peer)
 	log.Println("Recieved heartbeat from peer at ", peer.IP)
-}
-
-func (server *Server) getAvailableIP() (ip string) {
-	if len(server.ipPool) > 0 {
-		addr := server.ipPool[0]
-		server.ipPool = server.ipPool[1:len(server.ipPool)]
-		return addr
-	}
-	return " "
 }
 
 func (server *Server) readIfce() {
