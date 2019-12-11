@@ -53,11 +53,12 @@ func main() {
 			}
 			server := new(miniature.Server)
 			server.Config = *serverConfig
-			_, err := server.CreateClientConfig()
+			config, err := server.CreateClientConfig()
 			if err != nil {
 				log.Fatal(err)
 				break
 			}
+			log.Println(config)
 		case "run":
 			if len(os.Args) == 3 {
 				err := runFlag.Parse(os.Args[2:])

@@ -82,14 +82,13 @@ func (pool *Pool) Update(ipAddress string, peer Peer) {
 
 // NewPeer assigns an IP address to a peer and records the UDP address to be used to contact
 // the client
-func (pool *Pool) NewPeer(UDPAddr *net.UDPAddr) *Peer {
+func (pool *Pool) NewPeer() *Peer {
 	var peer *Peer
 	pool.Mutex.Lock()
 	if len(pool.Reserve) > 0 {
 		peer = new(Peer)
 		ipAddress := pool.Reserve[0]
 		peer.IP = ipAddress
-		peer.Addr = UDPAddr
 		pool.Peers[ipAddress] = peer
 	}
 	pool.Mutex.Unlock()
@@ -99,8 +98,12 @@ func (pool *Pool) NewPeer(UDPAddr *net.UDPAddr) *Peer {
 	return nil
 }
 
-func (pool *Pool) Size() int {
+func (pool *Pool) ConnectedPeersCount() int {
 	return len(pool.Peers)
+}
+
+func (pool *Pool) AvailableAddressesCount() int {
+	return len(pool.Reserve)
 }
 
 func constructIP(ip net.IP) {
