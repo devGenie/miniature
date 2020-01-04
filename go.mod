@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	github.com/aead/ecdh v0.2.0
+	github.com/pierrec/lz4 v2.4.0+incompatible
 	github.com/pkg/errors v0.8.1
 	github.com/robfig/cron v1.2.0
 	github.com/songgao/water v0.0.0-20190623021929-8567d1527789
