@@ -24,6 +24,19 @@ func Compress(data []byte) (compressed []byte, err error) {
 }
 
 // Decompress decompresses bytes passed to it and returns a decompressed byte array
-func Decompress([]byte) {
+func Decompress(data []byte) (decompressedData []byte, err error) {
+	buff := make([]byte, 10*len(data))
+	n, err := lz4.UncompressBlock(data, buff)
 
+	if err != nil {
+		return nil, err
+	}
+
+	if n == 0 {
+		err = errors.New("Failed to decompress data")
+		return nil, err
+	}
+
+	decompressedData = buff[:n]
+	return decompressedData, nil
 }
