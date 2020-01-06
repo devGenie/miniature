@@ -676,7 +676,12 @@ func (server *Server) readIfce() {
 			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 			peer := server.connectionPool.GetPeer(header.Dst.String())
 			log.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
-			_, err = server.socket.WriteToUDP(encodedPacket, peer.Addr)
+			compressedPacket, err := Compress(encodedPacket)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			_, err = server.socket.WriteToUDP(compressedPacket, peer.Addr)
 			if err != nil {
 				return
 			}
