@@ -255,8 +255,14 @@ func (client *Client) handleOutgoingConnections() {
 				continue
 			}
 
+			compressedPacket, err := Compress(encryptedData)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
 			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
-			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
+			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: compressedPacket}
 			encodedPacket, err := utilities.Encode(sendPacket)
 			if err != nil {
 				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
@@ -294,8 +300,14 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
+	compressedPacket, err := Compress(encryptedData)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
 	packetHeader := utilities.PacketHeader{Flag: utilities.HEARTBEAT, Nonce: nonce, Src: client.ifce.IP.String()}
-	sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
+	sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: compressedPacket}
 	encodedPacket, err := utilities.Encode(sendPacket)
 	if err != nil {
 		log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
