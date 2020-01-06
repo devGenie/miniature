@@ -201,7 +201,12 @@ func (client *Client) handleIncomingConnections() {
 		}
 
 		log.Printf("Recieved %d bytes \n", length)
-		err = utilities.Decode(packet, inputBytes)
+		decompressedPacket, err := Decompress(inputBytes)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		err = utilities.Decode(packet, decompressedPacket)
 		if err != nil {
 			log.Printf("Error decoding data from the server \t Error : %s \n", err)
 			continue

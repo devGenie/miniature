@@ -59,7 +59,7 @@ func (pool *Pool) cleanupExpired() {
 		timeSinceHeartBeat := time.Since(v.LastHeartbeat)
 		elapsedTime := timeSinceHeartBeat.Seconds()
 		if elapsedTime > pool.peerTimeOut {
-			log.Printf("%s has been quiet for %d. Removing after %d timeout \n", k, elapsedTime, pool.peerTimeOut)
+			log.Printf("%s has been quiet for %g. Removing after %g timeout \n", k, elapsedTime, pool.peerTimeOut)
 			delete(pool.Peers, k)
 			pool.Reserve = append(pool.Reserve, k)
 		}
