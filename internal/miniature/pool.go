@@ -21,10 +21,12 @@ func InitNodePool(IPAddr net.IP, network net.IPNet) *Pool {
 	nodePool := new(Pool)
 	nodePool.Mutex = new(sync.Mutex)
 	nodePool.Peers = make(map[string]*Peer)
+	nodePool.peerTimeOut = float64(300)
+	log.Println(nodePool.peerTimeOut)
 
 	for addr := ipaddr.Mask(network.Mask); network.Contains(*ipaddr); constructIP(*ipaddr) {
 		if ipaddr.String() != addr.String() {
-			nodePool.Reserve = append(nodePool.Reserve, addr.String())
+			nodePool.Reserve = append(nodePool.Reserve, ipaddr.String())
 		} else {
 			log.Printf("Skipping the interface id %s \n", addr.String())
 		}
@@ -51,17 +53,18 @@ func InitNodePool(IPAddr net.IP, network net.IPNet) *Pool {
 }
 
 func (pool *Pool) cleanupExpired() {
-	now := time.Now()
 	pool.Mutex.Lock()
 
 	for k, v := range pool.Peers {
-		timeSinceHeartBeat := now.Sub(v.LastHeartbeat)
+		timeSinceHeartBeat := time.Since(v.LastHeartbeat)
 		elapsedTime := timeSinceHeartBeat.Seconds()
 		if elapsedTime > pool.peerTimeOut {
+			log.Printf("%s has been quiet for %d. Removing after %d timeout \n", k, elapsedTime, pool.peerTimeOut)
 			delete(pool.Peers, k)
 			pool.Reserve = append(pool.Reserve, k)
 		}
 	}
+	pool.Mutex.Unlock()
 }
 
 // GetPeer returns a peer corresponding to
@@ -84,18 +87,18 @@ func (pool *Pool) Update(ipAddress string, peer Peer) {
 // the client
 func (pool *Pool) NewPeer() *Peer {
 	var peer *Peer
+	peer = nil
 	pool.Mutex.Lock()
 	if len(pool.Reserve) > 0 {
 		peer = new(Peer)
 		ipAddress := pool.Reserve[0]
 		peer.IP = ipAddress
+		peer.LastHeartbeat = time.Now()
 		pool.Peers[ipAddress] = peer
+		pool.Reserve = append(pool.Reserve[:0], pool.Reserve[1:]...)
 	}
 	pool.Mutex.Unlock()
-	if peer == nil {
-		return peer
-	}
-	return nil
+	return peer
 }
 
 func (pool *Pool) ConnectedPeersCount() int {
