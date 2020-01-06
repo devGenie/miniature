@@ -255,23 +255,23 @@ func (client *Client) handleOutgoingConnections() {
 				continue
 			}
 
-			compressedPacket, err := Compress(encryptedData)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
 			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
-			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: compressedPacket}
+			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
 			encodedPacket, err := utilities.Encode(sendPacket)
 			if err != nil {
 				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
 				break
 			}
 
-			log.Printf("Sending %d bytes to %s \n", len(encodedPacket), header.Dst)
+			compressedPacket, err := Compress(encodedPacket)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
 			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-			_, err = client.conn.Write(encodedPacket)
+			_, err = client.conn.Write(compressedPacket)
 			if err != nil {
 				break
 			}
@@ -300,24 +300,24 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
-	compressedPacket, err := Compress(encryptedData)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
 	packetHeader := utilities.PacketHeader{Flag: utilities.HEARTBEAT, Nonce: nonce, Src: client.ifce.IP.String()}
-	sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: compressedPacket}
+	sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
 	encodedPacket, err := utilities.Encode(sendPacket)
 	if err != nil {
 		log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
 		return
 	}
 
+	compressedPacket, err := Compress(encodedPacket)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
 	serverAddress := client.conn.RemoteAddr()
 	log.Printf("Sending pulse to server at %s \n", serverAddress.String())
 
-	_, err = client.conn.Write(encodedPacket)
+	_, err = client.conn.Write(compressedPacket)
 	if err != nil {
 		return
 	}
