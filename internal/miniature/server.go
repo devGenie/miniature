@@ -557,7 +557,12 @@ func (server *Server) listenAndServe() {
 			continue
 		}
 
-		err = utilities.Decode(packet, inputBytes[:length])
+		decompressedData, err := Decompress(inputBytes[:length])
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		err = utilities.Decode(packet, decompressedData)
 		if err != nil {
 			log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
 			continue
