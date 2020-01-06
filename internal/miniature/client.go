@@ -201,7 +201,12 @@ func (client *Client) handleIncomingConnections() {
 		}
 
 		log.Printf("Recieved %d bytes \n", length)
-		err = utilities.Decode(packet, inputBytes)
+		decompressedPacket, err := Decompress(inputBytes)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		err = utilities.Decode(packet, decompressedPacket)
 		if err != nil {
 			log.Printf("Error decoding data from the server \t Error : %s \n", err)
 			continue
@@ -263,9 +268,15 @@ func (client *Client) handleOutgoingConnections() {
 				break
 			}
 
-			log.Printf("Sending %d bytes to %s \n", len(encodedPacket), header.Dst)
+			compressedPacket, err := Compress(encodedPacket)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
 			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-			_, err = client.conn.Write(encodedPacket)
+			_, err = client.conn.Write(compressedPacket)
 			if err != nil {
 				break
 			}
@@ -302,10 +313,16 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
+	compressedPacket, err := Compress(encodedPacket)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
 	serverAddress := client.conn.RemoteAddr()
 	log.Printf("Sending pulse to server at %s \n", serverAddress.String())
 
-	_, err = client.conn.Write(encodedPacket)
+	_, err = client.conn.Write(compressedPacket)
 	if err != nil {
 		return
 	}

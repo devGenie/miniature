@@ -194,7 +194,6 @@ func (server *Server) Run(config ServerConfig) {
 	go server.listenAndServe()
 	go server.readIfce()
 
-	server.watchConnections()
 	server.waiter.Wait()
 }
 
@@ -416,7 +415,6 @@ func (server *Server) generateCerts(certPath string, privatekeyPath string) (pri
 }
 
 func (server *Server) listenTLS() {
-	log.Println("handling ksdsdksjfskj")
 	defer server.waiter.Done()
 	caFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
 	crtFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
@@ -450,13 +448,10 @@ func (server *Server) listenTLS() {
 		return
 	}
 
-	log.Println(listeningConn.Addr())
 	defer listeningConn.Close()
 	gob.Register(ecdh.Point{})
-	log.Println("kskfskfskfskf_____")
 	for {
 		conn, err := listeningConn.Accept()
-		log.Println("kskfskfskfskf")
 		if err != nil {
 			log.Println(err)
 			continue
@@ -497,7 +492,6 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	clientPublicKey := new(ecdh.Point)
 	err := utilities.Decode(clientPublicKey, payload)
 	if err != nil {
-		log.Println(payload)
 		log.Println("Failed to decode client public key")
 		return err
 	}
@@ -557,15 +551,18 @@ func (server *Server) listenAndServe() {
 	inputBytes := make([]byte, 2048)
 	packet := new(utilities.Packet)
 	for {
-		length, addr, err := lstnConn.ReadFromUDP(inputBytes)
+		length, _, err := lstnConn.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
 			continue
 		}
 
-		log.Printf("Received %d bytes from %v \n", length, addr)
-
-		err = utilities.Decode(packet, inputBytes[:length])
+		decompressedData, err := Decompress(inputBytes[:length])
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		err = utilities.Decode(packet, decompressedData)
 		if err != nil {
 			log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
 			continue
@@ -679,14 +676,15 @@ func (server *Server) readIfce() {
 			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 			peer := server.connectionPool.GetPeer(header.Dst.String())
 			log.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
-			_, err = server.socket.WriteToUDP(encodedPacket, peer.Addr)
+			compressedPacket, err := Compress(encodedPacket)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			_, err = server.socket.WriteToUDP(compressedPacket, peer.Addr)
 			if err != nil {
 				return
 			}
 		}
 	}
-}
-
-func (server *Server) watchConnections() {
-	utilities.RunCron("Cleaner", "0 0/5 * * * *", server.connectionPool.cleanupExpired)
 }
