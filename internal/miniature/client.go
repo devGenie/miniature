@@ -154,6 +154,8 @@ func (client *Client) AuthenticateUser() error {
 
 			log.Println("Client has been assigned ", handshakePacket.ClientIP.IPAddr)
 			client.ifce = ifce
+			client.ifce.Mtu = "1400"
+			client.ifce.IP = handshakePacket.ClientIP.IPAddr
 
 			log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
 
@@ -278,8 +280,10 @@ func (client *Client) handleOutgoingConnections() {
 			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 			_, err = client.conn.Write(compressedPacket)
 			if err != nil {
+				fmt.Println(err)
 				break
 			}
+			fmt.Println(err)
 		}
 	}
 }
