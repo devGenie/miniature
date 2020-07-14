@@ -662,29 +662,34 @@ func (server *Server) readIfce() {
 
 		if length > -4 {
 			header, err := ipv4.ParseHeader(buffer[:length])
+			fmt.Println(header)
 			if err != nil {
 				log.Println(err)
 				continue
 			}
-			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
-			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
-			encodedPacket, err := utilities.Encode(sendPacket)
-			if err != nil {
-				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
-				return
-			}
-			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 			peer := server.connectionPool.GetPeer(header.Dst.String())
-			log.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
-			compressedPacket, err := Compress(encodedPacket)
-			if err != nil {
-				log.Println(err)
-				return
+			fmt.Println(peer)
+			if peer != nil {
+				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
+				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
+				encodedPacket, err := utilities.Encode(sendPacket)
+				if err != nil {
+					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
+					return
+				}
+				log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+				log.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
+				compressedPacket, err := Compress(encodedPacket)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				_, err = server.socket.WriteToUDP(compressedPacket, peer.Addr)
+				if err != nil {
+					return
+				}
 			}
-			_, err = server.socket.WriteToUDP(compressedPacket, peer.Addr)
-			if err != nil {
-				return
-			}
+			continue
 		}
 	}
 }
