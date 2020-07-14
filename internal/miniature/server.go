@@ -66,6 +66,7 @@ type ServerConfig struct {
 	CertificatesDirectory string
 	Network               string
 	ListeningPort         int
+	PublicIP              string
 	Metadata              struct {
 		Country       string `yaml:"Country"`
 		Organization  string `yaml:"Organization"`
@@ -213,17 +214,9 @@ func (server *Server) CreateClientConfig() (yamlConfiguration string, errorMessa
 	if err != nil {
 		return "", err
 	}
-	ifceName, _, err := utilities.GetDefaultGateway()
-	if err != nil {
-		return "", err
-	}
 
-	publicIP, err := utilities.GetPublicIP(ifceName)
-	if err != nil {
-		return "", err
-	}
 	clientConfig := new(ClientConfig)
-	clientConfig.ServerAddress = publicIP
+	clientConfig.ServerAddress = server.Config.PublicIP
 	clientConfig.ListeningPort = server.Config.ListeningPort
 	clientConfig.PrivateKey = string(privateKeyBytes)
 	clientConfig.Certificate = string(certBytes)
@@ -255,12 +248,7 @@ func (server *Server) createCA() error {
 	cert.Province = server.Config.Metadata.Province
 	cert.StreetAddress = server.Config.Metadata.StreetAddress
 	cert.PostalCode = server.Config.Metadata.PostalCode
-
-	ipaddress, err := utilities.GetPublicIP(server.gatewayIfce)
-	if err != nil {
-		return err
-	}
-	cert.IPAddress = ipaddress
+	cert.IPAddress = server.Config.PublicIP
 	privateKey, publicKey, caCert, err := cert.GenerateCA()
 	if err != nil {
 		return err
