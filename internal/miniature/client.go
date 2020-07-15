@@ -19,11 +19,12 @@ import (
 
 // Client represents a client connecting to the VPN server
 type Client struct {
-	ifce   *utilities.Tun
-	conn   *net.UDPConn
-	waiter sync.WaitGroup
-	config ClientConfig
-	secret []byte
+	ifce       *utilities.Tun
+	serverConn *net.UDPAddr
+	conn       *net.UDPConn
+	waiter     sync.WaitGroup
+	config     ClientConfig
+	secret     []byte
 }
 
 // ClientConfig holds the client configuration loaded from the yml configuration file
@@ -50,10 +51,8 @@ func (client *Client) Run(config ClientConfig) error {
 
 	if err := client.listen(client.config.ServerAddress,
 		strconv.Itoa(client.config.ListeningPort)); err != nil {
-		client.conn.Close()
 		return err
 	}
-	defer client.conn.Close()
 
 	client.waiter.Add(2)
 	go client.handleIncomingConnections()
@@ -175,12 +174,8 @@ func (client *Client) AuthenticateUser() error {
 }
 
 func (client *Client) listen(server, port string) error {
-	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%s", server, port))
-	if err != nil {
-		log.Println("Failed to establish connection with the server")
-	}
-
-	conn, err := net.DialUDP("udp", nil, serverAddr)
+	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%v", 4221))
+	conn, err := net.ListenUDP("udp4", lstnAddr)
 	if err != nil {
 		fmt.Println(err)
 		log.Printf("Failed to connect to %s", server)
@@ -240,6 +235,11 @@ func (client *Client) handleOutgoingConnections() {
 		log.Printf("Error converting string to integer %s", err)
 	}
 
+	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", client.config.ServerAddress, client.config.ListeningPort))
+	if err != nil {
+		log.Println("Failed to establish connection with the server")
+	}
+
 	packetSize = packetSize - 400
 	buffer := make([]byte, packetSize)
 	for {
@@ -250,7 +250,7 @@ func (client *Client) handleOutgoingConnections() {
 		}
 
 		if length > -4 {
-			header, err := ipv4.ParseHeader(buffer[:length])
+			_, err := ipv4.ParseHeader(buffer[:length])
 			if err != nil {
 				log.Println(err)
 				continue
@@ -276,14 +276,16 @@ func (client *Client) handleOutgoingConnections() {
 				continue
 			}
 
-			log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
-			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-			_, err = client.conn.Write(compressedPacket)
+			// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
+			// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+			// log.Printf("UDP addr %v \n", client.conn.RemoteAddr())
+			// log.Printf("Local addr %v \n", client.conn.LocalAddr())
+			n, err := client.conn.WriteToUDP(compressedPacket, serverAddr)
 			if err != nil {
 				fmt.Println(err)
-				break
+				continue
 			}
-			fmt.Println(err)
+			fmt.Println(n)
 		}
 	}
 }
@@ -323,10 +325,11 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
-	serverAddress := client.conn.RemoteAddr()
-	log.Printf("Sending pulse to server at %s \n", serverAddress.String())
+	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", client.config.ServerAddress, client.config.ListeningPort))
 
-	_, err = client.conn.Write(compressedPacket)
+	log.Printf("Sending pulse to server at %s \n", serverAddr.String())
+
+	_, err = client.conn.WriteToUDP(compressedPacket, serverAddr)
 	if err != nil {
 		return
 	}

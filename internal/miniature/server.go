@@ -467,6 +467,7 @@ func (server *Server) handleTLS(conn net.Conn) {
 		if packet.PacketHeader.Flag == utilities.HANDSHAKE {
 			err = server.handleHandshake(conn, packet.Payload)
 			if err != nil {
+				fmt.Println(err)
 				break
 			}
 		}
@@ -525,12 +526,12 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
 
-	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("0.0.0.0:%v", server.Config.ListeningPort))
+	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%v", server.Config.ListeningPort))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
 
-	lstnConn, err := net.ListenUDP("udp", lstnAddr)
+	lstnConn, err := net.ListenUDP("udp4", lstnAddr)
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
