@@ -526,14 +526,14 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
 
-	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%v", server.Config.ListeningPort))
+	lstnAddr, err := net.ResolveUDPAddr("udp6", fmt.Sprintf("%s:%v", server.Config.PublicIP, server.Config.ListeningPort))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
 
-	lstnConn, err := net.ListenUDP("udp4", lstnAddr)
+	lstnConn, err := net.ListenUDP("udp6", lstnAddr)
 	if err != nil {
-		log.Fatalln("Unable to listen on UDP socket:", err)
+		log.Fatalln("Unable to listen on UDP socket111:", err)
 	}
 
 	server.socket = lstnConn
