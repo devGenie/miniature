@@ -96,6 +96,7 @@ func (server *Server) Run(config ServerConfig) {
 		return
 	}
 
+	fmt.Println("TunIP", ip)
 	err = ifce.Configure(ip, ip, "1400")
 	if err != nil {
 		log.Printf("Error: %s \n", err)
@@ -137,7 +138,7 @@ func (server *Server) Run(config ServerConfig) {
 	server.gatewayIfce = gatewayIfce
 
 	log.Printf("Generating IP address for %s network space \n", server.network)
-	connectionPool := InitNodePool(server.tunInterface.IP, *server.network)
+	connectionPool := InitNodePool(server.tunInterface.IP.String(), *server.network)
 	server.connectionPool = connectionPool
 
 	log.Printf("The CIDR of this network is %s \n", server.network)
@@ -539,7 +540,7 @@ func (server *Server) listenAndServe() {
 	inputBytes := make([]byte, 2048)
 	packet := new(utilities.Packet)
 	for {
-		length, _, err := lstnConn.ReadFromUDP(inputBytes)
+		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
 			continue
@@ -560,6 +561,7 @@ func (server *Server) listenAndServe() {
 		headerFlag := packetHeader.Flag
 		nonce := packetHeader.Nonce
 		peer := server.connectionPool.GetPeer(packetHeader.Src)
+		peer.Addr = clientConn
 		decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
 		if err != nil {
 			log.Println("Failed to decrypt data")
@@ -570,14 +572,15 @@ func (server *Server) listenAndServe() {
 		case utilities.HEARTBEAT:
 			server.handleHeartbeat(decryptedPayload)
 		case utilities.SESSION:
-			server.handleConnection(decryptedPayload)
+			server.handleConnection(peer, decryptedPayload)
 		default:
 			log.Println("Expected headers not found")
 		}
 	}
 }
 
-func (server *Server) handleConnection(packet []byte) {
+func (server *Server) handleConnection(peer *Peer, packet []byte) {
+	server.connectionPool.Update(peer.IP, *peer)
 	_, err := server.tunInterface.Ifce.Write(packet)
 	if err != nil {
 		return
@@ -650,13 +653,11 @@ func (server *Server) readIfce() {
 
 		if length > -4 {
 			header, err := ipv4.ParseHeader(buffer[:length])
-			fmt.Println(header)
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 			peer := server.connectionPool.GetPeer(header.Dst.String())
-			fmt.Println(peer)
 			if peer != nil {
 				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
 				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
@@ -672,8 +673,10 @@ func (server *Server) readIfce() {
 					log.Println(err)
 					return
 				}
-				_, err = server.socket.WriteToUDP(compressedPacket, peer.Addr)
+				fmt.Println(len(compressedPacket))
+				_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
 				if err != nil {
+					fmt.Println(err)
 					return
 				}
 			}

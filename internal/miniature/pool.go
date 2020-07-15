@@ -15,16 +15,15 @@ type Pool struct {
 }
 
 // InitNodePool creates an empty nodepool and populates it with IP addresses
-func InitNodePool(IPAddr net.IP, network net.IPNet) *Pool {
-	ipaddr := &IPAddr
-
+func InitNodePool(IPAddr string, network net.IPNet) *Pool {
+	ipaddr := net.ParseIP(IPAddr)
 	nodePool := new(Pool)
 	nodePool.Mutex = new(sync.Mutex)
 	nodePool.Peers = make(map[string]*Peer)
 	nodePool.peerTimeOut = float64(300)
 	log.Println(nodePool.peerTimeOut)
 
-	for addr := ipaddr.Mask(network.Mask); network.Contains(*ipaddr); constructIP(*ipaddr) {
+	for addr := ipaddr.Mask(network.Mask); network.Contains(ipaddr); constructIP(ipaddr) {
 		if ipaddr.String() != addr.String() {
 			nodePool.Reserve = append(nodePool.Reserve, ipaddr.String())
 		} else {
