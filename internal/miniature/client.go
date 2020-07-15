@@ -182,6 +182,7 @@ func (client *Client) listen(server, port string) error {
 
 	conn, err := net.DialUDP("udp", nil, serverAddr)
 	if err != nil {
+		fmt.Println(err)
 		log.Printf("Failed to connect to %s", server)
 		return err
 	}
@@ -193,20 +194,19 @@ func (client *Client) handleIncomingConnections() {
 	defer client.waiter.Done()
 
 	inputBytes := make([]byte, 2048)
-
 	for {
 		packet := new(utilities.Packet)
-		length, err := client.conn.Read(inputBytes)
+		length, _, err := client.conn.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
 			log.Printf("Error : %s \n", err)
 			continue
 		}
 
 		log.Printf("Recieved %d bytes \n", length)
-		decompressedPacket, err := Decompress(inputBytes)
+		decompressedPacket, err := Decompress(inputBytes[:length])
 		if err != nil {
 			log.Println(err)
-			return
+			continue
 		}
 		err = utilities.Decode(packet, decompressedPacket)
 		if err != nil {
@@ -262,7 +262,7 @@ func (client *Client) handleOutgoingConnections() {
 				continue
 			}
 
-			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
+			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String()}
 			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
 			encodedPacket, err := utilities.Encode(sendPacket)
 			if err != nil {
