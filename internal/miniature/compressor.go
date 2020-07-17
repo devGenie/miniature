@@ -2,7 +2,6 @@ package miniature
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/pierrec/lz4"
 )
@@ -27,10 +26,7 @@ func Compress(data []byte) (compressed []byte, err error) {
 // Decompress decompresses bytes passed to it and returns a decompressed byte array
 func Decompress(data []byte) (decompressedData []byte, err error) {
 	buff := make([]byte, 100*len(data))
-	fmt.Println(len(buff))
-	fmt.Println(len(data))
 	n, err := lz4.UncompressBlock(data, buff)
-
 	if err != nil {
 		return nil, err
 	}
