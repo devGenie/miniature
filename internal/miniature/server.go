@@ -89,14 +89,19 @@ func (server *Server) Run(config ServerConfig) {
 		return
 	}
 
-	ip, network, err := net.ParseCIDR(config.Network)
+	_, network, err := net.ParseCIDR(config.Network)
 	if err != nil {
 		log.Println(err)
 		log.Println("Failed to parse cidre")
 		return
 	}
 
-	fmt.Println("TunIP", ip)
+	log.Printf("Generating IP address for %s network space \n", network)
+	server.connectionPool = InitNodePool(network.IP.String(), *network)
+	log.Printf("Generated %v ip addresses \n", server.connectionPool.AvailableAddressesCount())
+
+	ip := net.ParseIP(server.connectionPool.NetworkAddress)
+	fmt.Println("TunIP", server.connectionPool.NetworkAddress)
 	err = ifce.Configure(ip, ip, "1400")
 	if err != nil {
 		log.Printf("Error: %s \n", err)
@@ -137,16 +142,10 @@ func (server *Server) Run(config ServerConfig) {
 	server.network = network
 	server.gatewayIfce = gatewayIfce
 
-	log.Printf("Generating IP address for %s network space \n", server.network)
-	connectionPool := InitNodePool(server.tunInterface.IP.String(), *server.network)
-	server.connectionPool = connectionPool
-
 	log.Printf("The CIDR of this network is %s \n", server.network)
 	log.Printf("Tun interface assigned ip address %s \n", server.tunInterface.IP)
-	log.Printf("Generated %v ip addresses \n", connectionPool.AvailableAddressesCount())
 
 	certExists := true
-
 	_, err = os.Stat(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt"))
 	if err != nil {
 		certExists = false
@@ -526,12 +525,12 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
 
-	lstnAddr, err := net.ResolveUDPAddr("udp6", fmt.Sprintf("%s:%v", server.Config.PublicIP, server.Config.ListeningPort))
+	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%v", server.Config.PublicIP, server.Config.ListeningPort))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
 
-	lstnConn, err := net.ListenUDP("udp6", lstnAddr)
+	lstnConn, err := net.ListenUDP("udp4", lstnAddr)
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket111:", err)
 	}
@@ -674,7 +673,6 @@ func (server *Server) readIfce() {
 					log.Println(err)
 					return
 				}
-				fmt.Println(len(compressedPacket))
 				_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
 				if err != nil {
 					fmt.Println(err)

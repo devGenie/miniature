@@ -8,10 +8,11 @@ import (
 )
 
 type Pool struct {
-	Peers       map[string]*Peer
-	Reserve     []string
-	Mutex       *sync.Mutex
-	peerTimeOut float64
+	Peers          map[string]*Peer
+	Reserve        []string
+	NetworkAddress string
+	Mutex          *sync.Mutex
+	peerTimeOut    float64
 }
 
 // InitNodePool creates an empty nodepool and populates it with IP addresses
@@ -24,7 +25,7 @@ func InitNodePool(IPAddr string, network net.IPNet) *Pool {
 	log.Println(nodePool.peerTimeOut)
 
 	for addr := ipaddr.Mask(network.Mask); network.Contains(ipaddr); constructIP(ipaddr) {
-		if ipaddr.String() != addr.String() {
+		if !ipaddr.Equal(addr) {
 			nodePool.Reserve = append(nodePool.Reserve, ipaddr.String())
 		} else {
 			log.Printf("Skipping the interface id %s \n", addr.String())
@@ -33,6 +34,7 @@ func InitNodePool(IPAddr string, network net.IPNet) *Pool {
 	// pop out the first and last values from the generated IP pool
 	// first value is the subnet address
 	// last address is the broadcast address
+	nodePool.NetworkAddress = nodePool.Reserve[0]
 	nodePool.Reserve = nodePool.Reserve[1 : len(nodePool.Reserve)-1]
 
 	// start a timer to periodically remove dead peers and add them back to the reserve
