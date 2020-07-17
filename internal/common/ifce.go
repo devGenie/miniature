@@ -51,7 +51,7 @@ func (tun *Tun) Configure(ifceAddr net.IP, remote net.IP, mtu string) error {
 		}
 
 		tun.Mtu = mtu
-		command = fmt.Sprintf("addr add dev %s local %s peer %s", tun.Ifce.Name(), ipaddr, remote.String())
+		command = fmt.Sprintf("add add dev %s local %s peer %s", tun.Ifce.Name(), ipaddr, remote.String())
 		err = RunCommand("ip", command)
 		if err != nil {
 			log.Fatalf("Error configuring interface %s, message: %s \n", tun.Ifce.Name(), err)
@@ -64,16 +64,14 @@ func (tun *Tun) Configure(ifceAddr net.IP, remote net.IP, mtu string) error {
 			log.Printf("Error configuring interface %s, message: %s \n", tun.Ifce.Name(), err)
 			return err
 		}
-		tun.IP = ifceAddr
-		return nil
 	} else if runtime.GOOS == "darwin" {
-		command := fmt.Sprintf("ifconfig %s inet %s %s mtu %s up", tun.Ifce.Name(), ipaddr, remote.String(), mtu)
-		fmt.Println(command)
-		if err := exec.Command("ifconfig", tun.Ifce.Name(), "inet", ipaddr, remote.String(), "mtu", mtu, "up").Run(); err != nil {
+		command := fmt.Sprintf("%s inet %s %s mtu %s up", tun.Ifce.Name(), ipaddr, remote.String(), mtu)
+		if err := exec.Command("ifconfig", command).Run(); err != nil {
 			log.Fatalln("Unable to setup interface:", err)
 		}
 	}
-	fmt.Println(runtime.GOOS)
+
+	tun.IP = ifceAddr
 	return nil
 }
 
