@@ -20,7 +20,7 @@ import (
 // Client represents a client connecting to the VPN server
 type Client struct {
 	ifce       *utilities.Tun
-	serverConn *net.UDPAddr
+	serverAddr *net.UDPAddr
 	conn       *net.UDPConn
 	waiter     sync.WaitGroup
 	config     ClientConfig
@@ -51,8 +51,10 @@ func (client *Client) Run(config ClientConfig) error {
 
 	if err := client.listen(client.config.ServerAddress,
 		strconv.Itoa(client.config.ListeningPort)); err != nil {
+		client.conn.Close()
 		return err
 	}
+	defer client.conn.Close()
 
 	client.waiter.Add(2)
 	go client.handleIncomingConnections()
@@ -128,6 +130,8 @@ func (client *Client) AuthenticateUser() error {
 
 		if packetReply.PacketHeader.Flag == utilities.HANDSHAKE_ACCEPTED {
 			log.Println("Server Handshake accepted, configuring client interfaces")
+			err = conn.Close()
+			fmt.Println(err)
 			handshakePacket := new(HandshakePacket)
 			err := utilities.Decode(handshakePacket, packetReply.Payload)
 			if err != nil {
@@ -155,27 +159,119 @@ func (client *Client) AuthenticateUser() error {
 			client.ifce = ifce
 			client.ifce.Mtu = "1400"
 			client.ifce.IP = handshakePacket.ClientIP.IPAddr
-
-			log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
+			_, gw, err := utilities.GetDefaultGateway()
+			if err != nil {
+				fmt.Println(err)
+			}
 
 			command := "route delete 0.0.0.0/0"
 			if err = utilities.RunCommand("ip", command); err != nil {
 				log.Printf("Error deleting route message: %s \n", err)
 			}
 
-			command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", client.ifce.IP.String(), client.ifce.Ifce.Name())
+			command = "route delete 8.8.8.8"
 			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
+				log.Printf("Error deleting route message: %s \n", err)
 			}
+
+			command = fmt.Sprintf("route delete %s", client.config.ServerAddress)
+			if err = utilities.RunCommand("ip", command); err != nil {
+				log.Printf("Error deleting route message: %s \n", err)
+			}
+
+			command = "-t nat -F"
+			err = utilities.RunCommand("iptables", command)
+			if err != nil {
+				log.Fatalf("Error running '%s' \n", command)
+				return err
+			}
+
+			command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j SNAT --to-source %s", client.ifce.Ifce.Name(), client.ifce.IP)
+			err = utilities.RunCommand("iptables", command)
+			if err != nil {
+				log.Fatalf("Error running '%s', message: %s \n", command, err)
+				return err
+			}
+
+			command = "-P FORWARD ACCEPT"
+			err = utilities.RunCommand("iptables", command)
+			if err != nil {
+				log.Fatalf("Error running '%s' \n", command)
+				return err
+			}
+
+			command = fmt.Sprintf("route add %s via %s", client.config.ServerAddress, gw)
+			if err = utilities.RunCommand("ip", command); err != nil {
+				log.Printf("Error running %s, message: %s \n", command, err)
+			}
+
+			command = fmt.Sprintf("route add 0.0.0.0/0 via %s", client.ifce.IP)
+			if err = utilities.RunCommand("ip", command); err != nil {
+				log.Printf("Error running %s, message: %s \n", command, err)
+			}
+
+			// //"ip", "route", "add", gateway, "dev", devStr
+			// ifc, nme, err := common.GetDefaultGateway()
+			// fmt.Println(err)
+			// fmt.Println(ifc)
+			// fmt.Println(nme)
+
+			// log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
+
+			// command := "route delete 0.0.0.0/0"
+			// if err = utilities.RunCommand("ip", command); err != nil {
+			// 	log.Printf("Error deleting route message: %s \n", err)
+			// }
+
+			// fmt.Println(client.config.ServerAddress)
+			// command := fmt.Sprintf("route add %s/32 via %s dev %s", client.config.ServerAddress, nme, ifc)
+			// if err = utilities.RunCommand("ip", command); err != nil {
+			// 	log.Printf("Error adding route to %s/32, message: %s \n", client.config.ServerAddress, err)
+			// }
+			//sudo route add -net 172.16.0.0/24 dev tun0
+			// command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", "10.2.0.1", client.ifce.Ifce.Name())
+			// if err = utilities.RunCommand("ip", command); err != nil {
+			// 	log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
+			// }
+
+			// command = fmt.Sprintf("route add %s via %s dev %s", client.config.ServerAddress, nme, ifc)
+			// if err = utilities.RunCommand("ip", command); err != nil {
+			// 	log.Printf("Error adding route to %s, message: %s \n", nme, err)
+			// }
+
+			// command = fmt.Sprintf("-A FORWARD -i %s -o %s -m state --state RELATED,ESTABLISHED -j ACCEPT", gatewayIfce, ifce.Ifce.Name())
+			// err = utilities.RunCommand("iptables", command)
+			// if err != nil {
+			// 	fmt.Println(err)
+			// }
+
+			// command = fmt.Sprintf("-A FORWARD -i %s -o %s -j ACCEPT", ifce.Ifce.Name(), gatewayIfce)
+			// err = utilities.RunCommand("iptables", command)
+			// if err != nil {
+			// 	fmt.Println(err)
+			// }
+
+			// command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j MASQUERADE", ifce.Ifce.Name())
+			// err = utilities.RunCommand("iptables", command)
+			// if err != nil {
+			// 	fmt.Println(err)
+			// }
 			client.StartHeartBeat()
-			return nil
+			break
 		}
 	}
+	return nil
 }
 
 func (client *Client) listen(server, port string) error {
-	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%v", 4221))
-	conn, err := net.ListenUDP("udp4", lstnAddr)
+	serverAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%s", server, port))
+	if err != nil {
+		log.Println("Failed to establish connection with the server")
+		return err
+	}
+	client.serverAddr = serverAddr
+
+	conn, err := net.DialUDP("udp4", nil, serverAddr)
 	if err != nil {
 		fmt.Println(err)
 		log.Printf("Failed to connect to %s", server)
@@ -187,7 +283,7 @@ func (client *Client) listen(server, port string) error {
 
 func (client *Client) handleIncomingConnections() {
 	defer client.waiter.Done()
-
+	defer client.conn.Close()
 	inputBytes := make([]byte, 2048)
 	for {
 		packet := new(utilities.Packet)
@@ -223,6 +319,7 @@ func (client *Client) handleIncomingConnections() {
 func (client *Client) writeToIfce(packet []byte) {
 	_, err := client.ifce.Ifce.Write(packet)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 }
@@ -235,22 +332,18 @@ func (client *Client) handleOutgoingConnections() {
 		log.Printf("Error converting string to integer %s", err)
 	}
 
-	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", client.config.ServerAddress, client.config.ListeningPort))
-	if err != nil {
-		log.Println("Failed to establish connection with the server")
-	}
-
 	packetSize = packetSize - 400
 	buffer := make([]byte, packetSize)
 	for {
 		length, err := client.ifce.Ifce.Read(buffer)
+		fmt.Println(length)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
 		if length > -4 {
-			_, err := ipv4.ParseHeader(buffer[:length])
+			header, err := ipv4.ParseHeader(buffer[:length])
 			if err != nil {
 				log.Println(err)
 				continue
@@ -276,16 +369,14 @@ func (client *Client) handleOutgoingConnections() {
 				continue
 			}
 
-			// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
-			// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-			// log.Printf("UDP addr %v \n", client.conn.RemoteAddr())
-			// log.Printf("Local addr %v \n", client.conn.LocalAddr())
-			n, err := client.conn.WriteToUDP(compressedPacket, serverAddr)
+			log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
+			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+
+			_, err = client.conn.Write(compressedPacket)
 			if err != nil {
 				fmt.Println(err)
-				continue
+				break
 			}
-			fmt.Println(n)
 		}
 	}
 }
@@ -325,12 +416,11 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
-	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", client.config.ServerAddress, client.config.ListeningPort))
+	log.Printf("Sending pulse to server at %s \n", client.serverAddr.String())
 
-	log.Printf("Sending pulse to server at %s \n", serverAddr.String())
-
-	_, err = client.conn.WriteToUDP(compressedPacket, serverAddr)
+	_, err = client.conn.Write(compressedPacket)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 }
