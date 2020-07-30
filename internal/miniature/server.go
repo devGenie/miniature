@@ -15,7 +15,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -66,6 +65,7 @@ type ServerConfig struct {
 	CertificatesDirectory string
 	Network               string
 	ListeningPort         int
+	PublicIP              string
 	Metadata              struct {
 		Country       string `yaml:"Country"`
 		Organization  string `yaml:"Organization"`
@@ -88,14 +88,20 @@ func (server *Server) Run(config ServerConfig) {
 		return
 	}
 
-	ip, network, err := net.ParseCIDR(config.Network)
+	_, network, err := net.ParseCIDR(config.Network)
 	if err != nil {
 		log.Println(err)
 		log.Println("Failed to parse cidre")
 		return
 	}
 
-	err = ifce.Configure(ip, ip, "1400")
+	log.Printf("Generating IP address for %s network space \n", network)
+	server.connectionPool = InitNodePool(network.IP.String(), *network)
+	log.Printf("Generated %v ip addresses \n", server.connectionPool.AvailableAddressesCount())
+
+	ip := net.ParseIP(server.connectionPool.NetworkAddress)
+	fmt.Println("TunIP", server.connectionPool.NetworkAddress)
+	err = ifce.Configure(ip, ip, 1500)
 	if err != nil {
 		log.Printf("Error: %s \n", err)
 		return
@@ -135,16 +141,10 @@ func (server *Server) Run(config ServerConfig) {
 	server.network = network
 	server.gatewayIfce = gatewayIfce
 
-	log.Printf("Generating IP address for %s network space \n", server.network)
-	connectionPool := InitNodePool(server.tunInterface.IP, *server.network)
-	server.connectionPool = connectionPool
-
 	log.Printf("The CIDR of this network is %s \n", server.network)
 	log.Printf("Tun interface assigned ip address %s \n", server.tunInterface.IP)
-	log.Printf("Generated %v ip addresses \n", connectionPool.AvailableAddressesCount())
 
 	certExists := true
-
 	_, err = os.Stat(fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt"))
 	if err != nil {
 		certExists = false
@@ -213,17 +213,9 @@ func (server *Server) CreateClientConfig() (yamlConfiguration string, errorMessa
 	if err != nil {
 		return "", err
 	}
-	ifceName, _, err := utilities.GetDefaultGateway()
-	if err != nil {
-		return "", err
-	}
 
-	publicIP, err := utilities.GetPublicIP(ifceName)
-	if err != nil {
-		return "", err
-	}
 	clientConfig := new(ClientConfig)
-	clientConfig.ServerAddress = publicIP
+	clientConfig.ServerAddress = server.Config.PublicIP
 	clientConfig.ListeningPort = server.Config.ListeningPort
 	clientConfig.PrivateKey = string(privateKeyBytes)
 	clientConfig.Certificate = string(certBytes)
@@ -255,12 +247,7 @@ func (server *Server) createCA() error {
 	cert.Province = server.Config.Metadata.Province
 	cert.StreetAddress = server.Config.Metadata.StreetAddress
 	cert.PostalCode = server.Config.Metadata.PostalCode
-
-	ipaddress, err := utilities.GetPublicIP(server.gatewayIfce)
-	if err != nil {
-		return err
-	}
-	cert.IPAddress = ipaddress
+	cert.IPAddress = server.Config.PublicIP
 	privateKey, publicKey, caCert, err := cert.GenerateCA()
 	if err != nil {
 		return err
@@ -478,6 +465,7 @@ func (server *Server) handleTLS(conn net.Conn) {
 		if packet.PacketHeader.Flag == utilities.HANDSHAKE {
 			err = server.handleHandshake(conn, packet.Payload)
 			if err != nil {
+				fmt.Println(err)
 				break
 			}
 		}
@@ -536,22 +524,23 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
 
-	lstnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("0.0.0.0:%v", server.Config.ListeningPort))
+	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%v", server.Config.PublicIP, server.Config.ListeningPort))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
 
-	lstnConn, err := net.ListenUDP("udp", lstnAddr)
+	lstnConn, err := net.ListenUDP("udp4", lstnAddr)
 	if err != nil {
-		log.Fatalln("Unable to listen on UDP socket:", err)
+		log.Fatalln("Unable to listen on UDP socket111:", err)
 	}
 
 	server.socket = lstnConn
 	defer lstnConn.Close()
-	inputBytes := make([]byte, 2048)
+	packetSize := server.tunInterface.Mtu - 28
+	inputBytes := make([]byte, packetSize)
 	packet := new(utilities.Packet)
 	for {
-		length, _, err := lstnConn.ReadFromUDP(inputBytes)
+		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
 			continue
@@ -572,6 +561,7 @@ func (server *Server) listenAndServe() {
 		headerFlag := packetHeader.Flag
 		nonce := packetHeader.Nonce
 		peer := server.connectionPool.GetPeer(packetHeader.Src)
+		peer.Addr = clientConn
 		decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
 		if err != nil {
 			log.Println("Failed to decrypt data")
@@ -582,14 +572,15 @@ func (server *Server) listenAndServe() {
 		case utilities.HEARTBEAT:
 			server.handleHeartbeat(decryptedPayload)
 		case utilities.SESSION:
-			server.handleConnection(decryptedPayload)
+			server.handleConnection(peer, decryptedPayload)
 		default:
 			log.Println("Expected headers not found")
 		}
 	}
 }
 
-func (server *Server) handleConnection(packet []byte) {
+func (server *Server) handleConnection(peer *Peer, packet []byte) {
+	server.connectionPool.Update(peer.IP, *peer)
 	_, err := server.tunInterface.Ifce.Write(packet)
 	if err != nil {
 		return
@@ -645,14 +636,8 @@ func (server *Server) handleHeartbeat(packet []byte) {
 func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
-	mtu := server.tunInterface.Mtu
-	packetSize, err := strconv.Atoi(mtu)
-	if err != nil {
-		log.Printf("Error converting string to integer %s", err)
-	}
 
-	packetSize = packetSize - 400
-	buffer := make([]byte, packetSize)
+	buffer := make([]byte, server.tunInterface.Mtu)
 	for {
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
@@ -666,25 +651,30 @@ func (server *Server) readIfce() {
 				log.Println(err)
 				continue
 			}
-			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
-			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
-			encodedPacket, err := utilities.Encode(sendPacket)
-			if err != nil {
-				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
-				return
-			}
-			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 			peer := server.connectionPool.GetPeer(header.Dst.String())
-			log.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
-			compressedPacket, err := Compress(encodedPacket)
-			if err != nil {
-				log.Println(err)
-				return
+			if peer != nil {
+				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
+				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
+				encodedPacket, err := utilities.Encode(sendPacket)
+				if err != nil {
+					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
+					return
+				}
+
+				compressedPacket, err := Compress(encodedPacket)
+				log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+				log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
 			}
-			_, err = server.socket.WriteToUDP(compressedPacket, peer.Addr)
-			if err != nil {
-				return
-			}
+			continue
 		}
 	}
 }
