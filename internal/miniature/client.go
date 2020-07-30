@@ -6,8 +6,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
+	"os"
+	"runtime"
 	"strconv"
 	"sync"
 
@@ -19,11 +22,12 @@ import (
 
 // Client represents a client connecting to the VPN server
 type Client struct {
-	ifce   *utilities.Tun
-	conn   *net.UDPConn
-	waiter sync.WaitGroup
-	config ClientConfig
-	secret []byte
+	ifce       *utilities.Tun
+	serverAddr *net.UDPAddr
+	conn       *net.UDPConn
+	waiter     sync.WaitGroup
+	config     ClientConfig
+	secret     []byte
 }
 
 // ClientConfig holds the client configuration loaded from the yml configuration file
@@ -129,6 +133,7 @@ func (client *Client) AuthenticateUser() error {
 
 		if packetReply.PacketHeader.Flag == utilities.HANDSHAKE_ACCEPTED {
 			log.Println("Server Handshake accepted, configuring client interfaces")
+			conn.Close()
 			handshakePacket := new(HandshakePacket)
 			err := utilities.Decode(handshakePacket, packetReply.Payload)
 			if err != nil {
@@ -148,38 +153,162 @@ func (client *Client) AuthenticateUser() error {
 
 			if err = ifce.Configure(handshakePacket.ClientIP.IPAddr,
 				handshakePacket.ClientIP.Gateway,
-				"1400"); err != nil {
+				1500); err != nil {
 				return err
 			}
 
 			log.Println("Client has been assigned ", handshakePacket.ClientIP.IPAddr)
 			client.ifce = ifce
-
-			log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
+			client.ifce.Mtu = 1500
+			client.ifce.IP = handshakePacket.ClientIP.IPAddr
+			gwIfce, gw, err := utilities.GetDefaultGateway()
+			fmt.Println(gwIfce)
+			fmt.Println(gw)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
 
 			command := "route delete 0.0.0.0/0"
 			if err = utilities.RunCommand("ip", command); err != nil {
 				log.Printf("Error deleting route message: %s \n", err)
 			}
 
-			command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", client.ifce.IP.String(), client.ifce.Ifce.Name())
+			command = "route delete 8.8.8.8"
 			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
+				log.Printf("Error deleting route message: %s \n", err)
 			}
+
+			command = fmt.Sprintf("route delete %s", client.config.ServerAddress)
+			if err = utilities.RunCommand("ip", command); err != nil {
+				log.Printf("Error deleting route message: %s \n", err)
+			}
+
+			if runtime.GOOS == "linux" {
+				command = "-t nat -F"
+				err = utilities.RunCommand("iptables", command)
+				if err != nil {
+					log.Fatalf("Error running '%s' \n", command)
+					return err
+				}
+
+				command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j SNAT --to-source %s", client.ifce.Ifce.Name(), client.ifce.IP)
+				err = utilities.RunCommand("iptables", command)
+				if err != nil {
+					log.Fatalf("Error running '%s', message: %s \n", command, err)
+					return err
+				}
+
+				command = "-P FORWARD ACCEPT"
+				err = utilities.RunCommand("iptables", command)
+				if err != nil {
+					log.Fatalf("Error running '%s' \n", command)
+					return err
+				}
+			} else if runtime.GOOS == "darwin" {
+				command = fmt.Sprintf("nat on %s from %s to any -> (%s) \n", gwIfce, client.ifce.IP, gwIfce)
+				tmpFile, err := ioutil.TempFile(os.TempDir(), "minature-")
+				defer os.Remove(tmpFile.Name())
+				defer tmpFile.Close()
+				pfctl := []byte(command)
+				if _, err = tmpFile.Write(pfctl); err != nil {
+					log.Fatal("Failed to write to temporary file", err)
+				}
+
+				command = fmt.Sprintf("-f %s", tmpFile.Name())
+				err = utilities.RunCommand("pfctl", command)
+				if err != nil {
+					log.Fatalf("Error running '%s' \n", command)
+					tmpFile.Close()
+					return err
+				}
+			}
+
+			command = fmt.Sprintf("route add %s via %s", client.config.ServerAddress, gw)
+			if err = utilities.RunCommand("ip", command); err != nil {
+				log.Printf("Error running %s, message: %s \n", command, err)
+			}
+
+			command = fmt.Sprintf("route add 0.0.0.0/0 via %s", client.ifce.IP)
+			if err = utilities.RunCommand("ip", command); err != nil {
+				log.Printf("Error running %s, message: %s \n", command, err)
+			}
+
+			command = fmt.Sprintf("route add 1.1.1.1 via %s", client.ifce.IP)
+			if err = utilities.RunCommand("ip", command); err != nil {
+				log.Printf("Error running %s, message: %s \n", command, err)
+			}
+
+			command = fmt.Sprintf("route add 8.8.8.8 via %s", client.ifce.IP)
+			if err = utilities.RunCommand("ip", command); err != nil {
+				log.Printf("Error running %s, message: %s \n", command, err)
+			}
+
+			// //"ip", "route", "add", gateway, "dev", devStr
+			// ifc, nme, err := common.GetDefaultGateway()
+			// fmt.Println(err)
+			// fmt.Println(ifc)
+			// fmt.Println(nme)
+
+			// log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
+
+			// command := "route delete 0.0.0.0/0"
+			// if err = utilities.RunCommand("ip", command); err != nil {
+			// 	log.Printf("Error deleting route message: %s \n", err)
+			// }
+
+			// fmt.Println(client.config.ServerAddress)
+			// command := fmt.Sprintf("route add %s/32 via %s dev %s", client.config.ServerAddress, nme, ifc)
+			// if err = utilities.RunCommand("ip", command); err != nil {
+			// 	log.Printf("Error adding route to %s/32, message: %s \n", client.config.ServerAddress, err)
+			// }
+			//sudo route add -net 172.16.0.0/24 dev tun0
+			// command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", "10.2.0.1", client.ifce.Ifce.Name())
+			// if err = utilities.RunCommand("ip", command); err != nil {
+			// 	log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
+			// }
+
+			// command = fmt.Sprintf("route add %s via %s dev %s", client.config.ServerAddress, nme, ifc)
+			// if err = utilities.RunCommand("ip", command); err != nil {
+			// 	log.Printf("Error adding route to %s, message: %s \n", nme, err)
+			// }
+
+			// command = fmt.Sprintf("-A FORWARD -i %s -o %s -m state --state RELATED,ESTABLISHED -j ACCEPT", gatewayIfce, ifce.Ifce.Name())
+			// err = utilities.RunCommand("iptables", command)
+			// if err != nil {
+			// 	fmt.Println(err)
+			// }
+
+			// command = fmt.Sprintf("-A FORWARD -i %s -o %s -j ACCEPT", ifce.Ifce.Name(), gatewayIfce)
+			// err = utilities.RunCommand("iptables", command)
+			// if err != nil {
+			// 	fmt.Println(err)
+			// }
+
+			// command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j MASQUERADE", ifce.Ifce.Name())
+			// err = utilities.RunCommand("iptables", command)
+			// if err != nil {
+			// 	fmt.Println(err)
+			// }
+
 			client.StartHeartBeat()
-			return nil
+			break
 		}
 	}
+	return nil
 }
 
 func (client *Client) listen(server, port string) error {
-	serverAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%s", server, port))
+	serverAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%s", server, port))
 	if err != nil {
 		log.Println("Failed to establish connection with the server")
+		return err
 	}
+	client.serverAddr = serverAddr
 
-	conn, err := net.DialUDP("udp", nil, serverAddr)
+	conn, err := net.DialUDP("udp4", nil, serverAddr)
 	if err != nil {
+		fmt.Println(err)
 		log.Printf("Failed to connect to %s", server)
 		return err
 	}
@@ -189,22 +318,22 @@ func (client *Client) listen(server, port string) error {
 
 func (client *Client) handleIncomingConnections() {
 	defer client.waiter.Done()
-
-	inputBytes := make([]byte, 2048)
-
+	defer client.conn.Close()
+	inputBytes := make([]byte, client.ifce.Mtu)
 	for {
 		packet := new(utilities.Packet)
-		length, err := client.conn.Read(inputBytes)
+		length, _, err := client.conn.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
 			log.Printf("Error : %s \n", err)
 			continue
 		}
+		fmt.Println("Reading from udp :", length)
 
-		log.Printf("Recieved %d bytes \n", length)
-		decompressedPacket, err := Decompress(inputBytes)
+		//log.Printf("Recieved %d bytes \n", length)
+		decompressedPacket, err := Decompress(inputBytes[:length])
 		if err != nil {
 			log.Println(err)
-			return
+			continue
 		}
 		err = utilities.Decode(packet, decompressedPacket)
 		if err != nil {
@@ -216,7 +345,7 @@ func (client *Client) handleIncomingConnections() {
 		headerFlag := packetHeader.Flag
 
 		if headerFlag == utilities.SESSION {
-			client.writeToIfce(packet.Payload)
+			go client.writeToIfce(packet.Payload)
 		} else {
 			log.Println("Expected headers not found")
 		}
@@ -224,21 +353,19 @@ func (client *Client) handleIncomingConnections() {
 }
 
 func (client *Client) writeToIfce(packet []byte) {
-	_, err := client.ifce.Ifce.Write(packet)
+	n, err := client.ifce.Ifce.Write(packet)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
+	fmt.Println("Writting to Interface :", n)
 }
 
 func (client *Client) handleOutgoingConnections() {
 	defer client.waiter.Done()
-	packetSize, err := strconv.Atoi(client.ifce.Mtu)
 	log.Println("Handling outgoing connection")
-	if err != nil {
-		log.Printf("Error converting string to integer %s", err)
-	}
 
-	packetSize = packetSize - 400
+	packetSize := client.ifce.Mtu - 28
 	buffer := make([]byte, packetSize)
 	for {
 		length, err := client.ifce.Ifce.Read(buffer)
@@ -247,8 +374,10 @@ func (client *Client) handleOutgoingConnections() {
 			continue
 		}
 
+		fmt.Println("Reading from interface:", length)
+
 		if length > -4 {
-			header, err := ipv4.ParseHeader(buffer[:length])
+			_, err := ipv4.ParseHeader(buffer[:length])
 			if err != nil {
 				log.Println(err)
 				continue
@@ -260,7 +389,7 @@ func (client *Client) handleOutgoingConnections() {
 				continue
 			}
 
-			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
+			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String()}
 			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
 			encodedPacket, err := utilities.Encode(sendPacket)
 			if err != nil {
@@ -274,12 +403,16 @@ func (client *Client) handleOutgoingConnections() {
 				continue
 			}
 
-			log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
-			log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-			_, err = client.conn.Write(compressedPacket)
-			if err != nil {
-				break
-			}
+			// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
+			// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+
+			go func() {
+				n, err := client.conn.Write(compressedPacket)
+				if err != nil {
+					fmt.Println(err)
+				}
+				fmt.Println("Writting to tunnel:", n)
+			}()
 		}
 	}
 }
@@ -319,11 +452,11 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
-	serverAddress := client.conn.RemoteAddr()
-	log.Printf("Sending pulse to server at %s \n", serverAddress.String())
+	log.Printf("Sending pulse to server at %s \n", client.serverAddr.String())
 
 	_, err = client.conn.Write(compressedPacket)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 }

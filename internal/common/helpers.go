@@ -80,6 +80,7 @@ func GetPublicIP(interfaceName string) (ipaddress string, err error) {
 	}
 
 	if len(strings.TrimSpace(publicIPAddress)) > 0 {
+		fmt.Println(publicIPAddress)
 		return publicIPAddress, nil
 	}
 	return "", errors.New("Could not find a public IP address")
