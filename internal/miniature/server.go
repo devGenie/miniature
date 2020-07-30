@@ -15,7 +15,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -102,7 +101,7 @@ func (server *Server) Run(config ServerConfig) {
 
 	ip := net.ParseIP(server.connectionPool.NetworkAddress)
 	fmt.Println("TunIP", server.connectionPool.NetworkAddress)
-	err = ifce.Configure(ip, ip, "1400")
+	err = ifce.Configure(ip, ip, 1500)
 	if err != nil {
 		log.Printf("Error: %s \n", err)
 		return
@@ -537,7 +536,8 @@ func (server *Server) listenAndServe() {
 
 	server.socket = lstnConn
 	defer lstnConn.Close()
-	inputBytes := make([]byte, 2048)
+	packetSize := server.tunInterface.Mtu - 28
+	inputBytes := make([]byte, packetSize)
 	packet := new(utilities.Packet)
 	for {
 		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
@@ -636,14 +636,8 @@ func (server *Server) handleHeartbeat(packet []byte) {
 func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
-	mtu := server.tunInterface.Mtu
-	packetSize, err := strconv.Atoi(mtu)
-	if err != nil {
-		log.Printf("Error converting string to integer %s", err)
-	}
 
-	packetSize = packetSize - 400
-	buffer := make([]byte, packetSize)
+	buffer := make([]byte, server.tunInterface.Mtu)
 	for {
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
@@ -666,9 +660,10 @@ func (server *Server) readIfce() {
 					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
 					return
 				}
-				log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-				log.Printf("Sending %d bytes to %s \n", header.Len, peer.Addr.String())
+
 				compressedPacket, err := Compress(encodedPacket)
+				log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+				log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
 				if err != nil {
 					log.Println(err)
 					return
