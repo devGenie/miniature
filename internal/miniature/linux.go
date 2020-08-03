@@ -1,7 +1,6 @@
 package miniature
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/devgenie/miniature/internal/common"
@@ -31,8 +30,8 @@ func SetUpLinuxClient(defaultGWIface string, defaultGWAddr string, tunnelIface s
 		{Destination: serverIP, NextHop: defaultGWAddr, GWInterface: defaultGWIface},
 	}
 	for _, route := range routes {
+		common.DeleteRoute(route.Destination)
 		err := common.AddRoute(route)
-		fmt.Println(err)
 		if err != nil {
 			return nil
 		}

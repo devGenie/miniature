@@ -155,3 +155,13 @@ func AddRoute(route Route) error {
 	}
 	return nil
 }
+
+// DeleteRoute deletes a route to a destination network
+func DeleteRoute(route string) error {
+	command := fmt.Sprintf("route delete %s", route)
+	err := RunCommand("ip", command)
+	if err != nil {
+		return err
+	}
+	return nil
+}
