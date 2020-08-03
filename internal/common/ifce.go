@@ -25,6 +25,13 @@ type Tun struct {
 	Mtu        int
 }
 
+// Route represens an ip route
+type Route struct {
+	Destination string
+	NextHop     string
+	GWInterface string
+}
+
 // NewInterface creates a new Tun interface
 func NewInterface() (*Tun, error) {
 	config := water.Config{
@@ -137,4 +144,14 @@ func GetDefaultGateway() (ifaceName string, gateway string, err error) {
 		return iface, ip, nil
 	}
 	return " ", "", nil
+}
+
+// AddRoute ...
+func AddRoute(route Route) error {
+	command := fmt.Sprintf("route add %s via %s", route.Destination, route.NextHop)
+	err := RunCommand("ip", command)
+	if err != nil {
+		return err
+	}
+	return nil
 }
