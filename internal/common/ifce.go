@@ -3,6 +3,7 @@ package common
 import (
 	"bufio"
 	"encoding/hex"
+	"errors"
 	"os/exec"
 
 	"fmt"
@@ -148,20 +149,34 @@ func GetDefaultGateway() (ifaceName string, gateway string, err error) {
 
 // AddRoute ...
 func AddRoute(route Route) error {
-	command := fmt.Sprintf("route add %s via %s", route.Destination, route.NextHop)
-	err := RunCommand("ip", command)
-	if err != nil {
+	switch runtime.GOOS {
+	case "linux":
+		command := fmt.Sprintf("route add %s via %s", route.Destination, route.NextHop)
+		err := RunCommand("ip", command)
+		return err
+	case "darwin":
+		command := fmt.Sprintf("-n add -net %s %s", route.Destination, route.NextHop)
+		err := RunCommand("route", command)
+		return err
+	default:
+		err := errors.New("Operating system not supported")
 		return err
 	}
-	return nil
 }
 
 // DeleteRoute deletes a route to a destination network
 func DeleteRoute(route string) error {
-	command := fmt.Sprintf("route delete %s", route)
-	err := RunCommand("ip", command)
-	if err != nil {
+	switch runtime.GOOS {
+	case "linux":
+		command := fmt.Sprintf("route delete %s", route)
+		err := RunCommand("ip", command)
+		return err
+	case "darwin":
+		command := fmt.Sprintf("delete %s", route)
+		err := RunCommand("route", command)
+		return err
+	default:
+		err := errors.New("Operating system not supported")
 		return err
 	}
-	return nil
 }
