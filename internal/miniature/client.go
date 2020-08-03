@@ -140,7 +140,7 @@ func (client *Client) AuthenticateUser() error {
 		return err
 	}
 
-	buf := make([]byte, 1478)
+	buf := make([]byte, 1400)
 	for {
 		_, err := conn.Read(buf)
 		if err != nil {
@@ -198,22 +198,10 @@ func (client *Client) AuthenticateUser() error {
 					return err
 				}
 			} else if runtime.GOOS == "darwin" {
-				// command = fmt.Sprintf("nat on %s from %s to any -> (%s) \n", client.defaultGateway.Interface, client.ifce.IP, client.defaultGateway.Interface)
-				// tmpFile, err := ioutil.TempFile(os.TempDir(), "minature-")
-				// defer os.Remove(tmpFile.Name())
-				// defer tmpFile.Close()
-				// pfctl := []byte(command)
-				// if _, err = tmpFile.Write(pfctl); err != nil {
-				// 	log.Fatal("Failed to write to temporary file", err)
-				// }
-
-				// command = fmt.Sprintf("-f %s", tmpFile.Name())
-				// err = utilities.RunCommand("pfctl", command)
-				// if err != nil {
-				// 	log.Fatalf("Error running '%s' \n", command)
-				// 	tmpFile.Close()
-				// 	return err
-				// }
+				err := SetDarwinClient(client.defaultGateway.Interface, client.defaultGateway.GatewayIP, client.ifce.Ifce.Name(), client.ifce.IP.String(), client.config.ServerAddress)
+				if err != nil {
+					return err
+				}
 			}
 
 			// command = fmt.Sprintf("route add %s via %s", client.config.ServerAddress, client.defaultGateway.Interface)

@@ -540,8 +540,7 @@ func (server *Server) listenAndServe() {
 
 	server.socket = lstnConn
 	defer lstnConn.Close()
-	packetSize := server.tunInterface.Mtu - 28
-	inputBytes := make([]byte, packetSize)
+	inputBytes := make([]byte, 1400)
 	packet := new(utilities.Packet)
 	for {
 		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
