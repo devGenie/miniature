@@ -45,6 +45,7 @@ type HandshakePacket struct {
 	ClientIP utilities.Addr
 	// The public key of the server to be used for encryption
 	ServerPublic crypto.PublicKey
+	DNSResolvers []string
 }
 
 // Server represents attributes of the VPN server
@@ -66,6 +67,7 @@ type ServerConfig struct {
 	Network               string
 	ListeningPort         int
 	PublicIP              string
+	DNSResolvers          []string
 	Metadata              struct {
 		Country       string `yaml:"Country"`
 		Organization  string `yaml:"Organization"`
@@ -497,6 +499,8 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	handshakePacket := new(HandshakePacket)
 	handshakePacket.ClientIP = clientIP
 	handshakePacket.ServerPublic = serverPublicKey
+	handshakePacket.DNSResolvers = server.Config.DNSResolvers
+	fmt.Println("DNS resolvers", server.Config.DNSResolvers)
 	packetHeaderData := utilities.PacketHeader{Flag: utilities.HANDSHAKE_ACCEPTED}
 
 	handshakePacketBytes, err := utilities.Encode(handshakePacket)
