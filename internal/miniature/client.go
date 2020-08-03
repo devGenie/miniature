@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"sync"
@@ -20,14 +21,22 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+// DefaultGateway represents the default gateway of the client.
+type DefaultGateway struct {
+	Interface string
+	GatewayIP string
+}
+
 // Client represents a client connecting to the VPN server
 type Client struct {
-	ifce       *utilities.Tun
-	serverAddr *net.UDPAddr
-	conn       *net.UDPConn
-	waiter     sync.WaitGroup
-	config     ClientConfig
-	secret     []byte
+	ifce           *utilities.Tun
+	serverAddr     *net.UDPAddr
+	conn           *net.UDPConn
+	waiter         sync.WaitGroup
+	config         ClientConfig
+	secret         []byte
+	resolveFile    string
+	defaultGateway DefaultGateway
 }
 
 // ClientConfig holds the client configuration loaded from the yml configuration file
@@ -59,10 +68,23 @@ func (client *Client) Run(config ClientConfig) error {
 	}
 	defer client.conn.Close()
 
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Kill)
+	go func() {
+		select {
+		case sig := <-c:
+			log.Printf("Recieved %s signal, running some house keeping", sig)
+			client.CleanUp()
+			os.Exit(0)
+		}
+	}()
+
 	client.waiter.Add(2)
 	go client.handleIncomingConnections()
 	go client.handleOutgoingConnections()
 	client.waiter.Wait()
+
 	return nil
 }
 
@@ -118,7 +140,7 @@ func (client *Client) AuthenticateUser() error {
 		return err
 	}
 
-	buf := make([]byte, 512)
+	buf := make([]byte, 1478)
 	for {
 		_, err := conn.Read(buf)
 		if err != nil {
@@ -157,139 +179,63 @@ func (client *Client) AuthenticateUser() error {
 				return err
 			}
 
-			log.Println("Client has been assigned ", handshakePacket.ClientIP.IPAddr)
+			log.Println("Client has been leased ", handshakePacket.ClientIP.IPAddr)
 			client.ifce = ifce
 			client.ifce.Mtu = 1500
 			client.ifce.IP = handshakePacket.ClientIP.IPAddr
-			gwIfce, gw, err := utilities.GetDefaultGateway()
-			fmt.Println(gwIfce)
-			fmt.Println(gw)
+			gwIfce, gwIP, err := utilities.GetDefaultGateway()
 			if err != nil {
 				fmt.Println(err)
 				return err
 			}
 
-			command := "route delete 0.0.0.0/0"
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error deleting route message: %s \n", err)
-			}
-
-			command = "route delete 8.8.8.8"
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error deleting route message: %s \n", err)
-			}
-
-			command = fmt.Sprintf("route delete %s", client.config.ServerAddress)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error deleting route message: %s \n", err)
-			}
+			client.defaultGateway.GatewayIP = gwIP
+			client.defaultGateway.Interface = gwIfce
 
 			if runtime.GOOS == "linux" {
-				command = "-t nat -F"
-				err = utilities.RunCommand("iptables", command)
+				err := SetUpLinuxClient(client.defaultGateway.Interface, client.defaultGateway.GatewayIP, client.ifce.Ifce.Name(), client.ifce.IP.String(), client.config.ServerAddress)
 				if err != nil {
-					log.Fatalf("Error running '%s' \n", command)
-					return err
-				}
-
-				command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j SNAT --to-source %s", client.ifce.Ifce.Name(), client.ifce.IP)
-				err = utilities.RunCommand("iptables", command)
-				if err != nil {
-					log.Fatalf("Error running '%s', message: %s \n", command, err)
-					return err
-				}
-
-				command = "-P FORWARD ACCEPT"
-				err = utilities.RunCommand("iptables", command)
-				if err != nil {
-					log.Fatalf("Error running '%s' \n", command)
 					return err
 				}
 			} else if runtime.GOOS == "darwin" {
-				command = fmt.Sprintf("nat on %s from %s to any -> (%s) \n", gwIfce, client.ifce.IP, gwIfce)
-				tmpFile, err := ioutil.TempFile(os.TempDir(), "minature-")
-				defer os.Remove(tmpFile.Name())
-				defer tmpFile.Close()
-				pfctl := []byte(command)
-				if _, err = tmpFile.Write(pfctl); err != nil {
-					log.Fatal("Failed to write to temporary file", err)
-				}
+				// command = fmt.Sprintf("nat on %s from %s to any -> (%s) \n", client.defaultGateway.Interface, client.ifce.IP, client.defaultGateway.Interface)
+				// tmpFile, err := ioutil.TempFile(os.TempDir(), "minature-")
+				// defer os.Remove(tmpFile.Name())
+				// defer tmpFile.Close()
+				// pfctl := []byte(command)
+				// if _, err = tmpFile.Write(pfctl); err != nil {
+				// 	log.Fatal("Failed to write to temporary file", err)
+				// }
 
-				command = fmt.Sprintf("-f %s", tmpFile.Name())
-				err = utilities.RunCommand("pfctl", command)
-				if err != nil {
-					log.Fatalf("Error running '%s' \n", command)
-					tmpFile.Close()
-					return err
-				}
+				// command = fmt.Sprintf("-f %s", tmpFile.Name())
+				// err = utilities.RunCommand("pfctl", command)
+				// if err != nil {
+				// 	log.Fatalf("Error running '%s' \n", command)
+				// 	tmpFile.Close()
+				// 	return err
+				// }
 			}
 
-			command = fmt.Sprintf("route add %s via %s", client.config.ServerAddress, gw)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error running %s, message: %s \n", command, err)
-			}
-
-			command = fmt.Sprintf("route add 0.0.0.0/0 via %s", client.ifce.IP)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error running %s, message: %s \n", command, err)
-			}
-
-			command = fmt.Sprintf("route add 1.1.1.1 via %s", client.ifce.IP)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error running %s, message: %s \n", command, err)
-			}
-
-			command = fmt.Sprintf("route add 8.8.8.8 via %s", client.ifce.IP)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error running %s, message: %s \n", command, err)
-			}
-
-			// //"ip", "route", "add", gateway, "dev", devStr
-			// ifc, nme, err := common.GetDefaultGateway()
-			// fmt.Println(err)
-			// fmt.Println(ifc)
-			// fmt.Println(nme)
-
-			// log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
-
-			// command := "route delete 0.0.0.0/0"
+			// command = fmt.Sprintf("route add %s via %s", client.config.ServerAddress, client.defaultGateway.Interface)
 			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error deleting route message: %s \n", err)
+			// 	log.Printf("Error running %s, message: %s \n", command, err)
 			// }
 
-			// fmt.Println(client.config.ServerAddress)
-			// command := fmt.Sprintf("route add %s/32 via %s dev %s", client.config.ServerAddress, nme, ifc)
+			// command = fmt.Sprintf("route add 0.0.0.0/0 via %s", client.ifce.IP)
 			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error adding route to %s/32, message: %s \n", client.config.ServerAddress, err)
-			// }
-			//sudo route add -net 172.16.0.0/24 dev tun0
-			// command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", "10.2.0.1", client.ifce.Ifce.Name())
-			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
+			// 	log.Printf("Error running %s, message: %s \n", command, err)
 			// }
 
-			// command = fmt.Sprintf("route add %s via %s dev %s", client.config.ServerAddress, nme, ifc)
-			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error adding route to %s, message: %s \n", nme, err)
+			// for _, dnsServer := range handshakePacket.DNSResolvers {
+			// 	command = fmt.Sprintf("route add %s via %s", dnsServer, client.ifce.IP)
+			// 	if err = utilities.RunCommand("ip", command); err != nil {
+			// 		log.Printf("Error running %s, message: %s \n", command, err)
+			// 	}
 			// }
-
-			// command = fmt.Sprintf("-A FORWARD -i %s -o %s -m state --state RELATED,ESTABLISHED -j ACCEPT", gatewayIfce, ifce.Ifce.Name())
-			// err = utilities.RunCommand("iptables", command)
-			// if err != nil {
-			// 	fmt.Println(err)
-			// }
-
-			// command = fmt.Sprintf("-A FORWARD -i %s -o %s -j ACCEPT", ifce.Ifce.Name(), gatewayIfce)
-			// err = utilities.RunCommand("iptables", command)
-			// if err != nil {
-			// 	fmt.Println(err)
-			// }
-
-			// command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j MASQUERADE", ifce.Ifce.Name())
-			// err = utilities.RunCommand("iptables", command)
-			// if err != nil {
-			// 	fmt.Println(err)
-			// }
+			err = client.setUpDNS(handshakePacket.DNSResolvers)
+			if err != nil {
+				return err
+			}
 
 			client.StartHeartBeat()
 			break
@@ -459,4 +405,32 @@ func (client *Client) HeartBeat() {
 		fmt.Println(err)
 		return
 	}
+}
+
+func (client *Client) setUpDNS(resolvers []string) error {
+	oldResolveFileContents, err := ioutil.ReadFile("/etc/resolv.conf")
+	if err != nil {
+		return err
+	}
+	client.resolveFile = string(oldResolveFileContents)
+	content := "# Generated by miniature \n"
+	for _, resolver := range resolvers {
+		content += fmt.Sprintf("nameserver %s\n", resolver)
+	}
+	return ioutil.WriteFile("/etc/resolv.conf", []byte(content), 0644)
+}
+
+// ResetDNS resets the resolv.conf file to the one before the vpn client was started
+func (client *Client) ResetDNS() error {
+	err := ioutil.WriteFile("/etc/resolv.conf", []byte(client.resolveFile), 0644)
+	if err != nil {
+		log.Println("Failed to restore /etc/resolv.conf file, restore the file manually by copying the contents below and pasting them into /etc/resolve.conf file")
+		fmt.Println(client.resolveFile)
+	}
+	return err
+}
+
+// CleanUp cleans up the client after a shutdown
+func (client *Client) CleanUp() {
+	client.ResetDNS()
 }
