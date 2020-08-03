@@ -640,7 +640,7 @@ func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
 
-	buffer := make([]byte, server.tunInterface.Mtu)
+	buffer := make([]byte, 1400)
 	for {
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
