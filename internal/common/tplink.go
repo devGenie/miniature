@@ -3,6 +3,7 @@ package common
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"log"
 	"net"
 )
@@ -22,6 +23,8 @@ const (
 	HEARTBEAT byte = 0x06
 	// SESSION sends session data
 	SESSION byte = 0x07
+	// MAX_FRAGMENT_SIZE is the maximum number of fragments
+	MAX_FRAGMENT_SIZE = 32
 )
 
 // Addr represents a HTTP address
@@ -43,6 +46,14 @@ type PacketHeader struct {
 type Packet struct {
 	PacketHeader
 	Payload []byte
+}
+
+// TransmissionPacket holds information about a packet in transit
+type TransmissionPacket struct {
+	Data          []byte
+	Fragmented    bool
+	FragmentCount int
+	Index         int
 }
 
 // TCP is a structure of a tcp datagram
@@ -81,4 +92,9 @@ func Encode(dataStructure interface{}) (encoded []byte, err error) {
 	}
 
 	return buffer.Bytes(), nil
+}
+
+func Fragment(data []byte) {
+	fragmentSize := len(data) / MAX_FRAGMENT_SIZE
+	fmt.Println("Fragment size", fragmentSize)
 }

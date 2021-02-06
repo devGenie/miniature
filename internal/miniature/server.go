@@ -640,7 +640,8 @@ func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
 
-	buffer := make([]byte, 1400)
+	packetSize := server.tunInterface.Mtu - 28
+	buffer := make([]byte, packetSize)
 	for {
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
@@ -665,17 +666,21 @@ func (server *Server) readIfce() {
 				}
 
 				compressedPacket, err := Compress(encodedPacket)
-				log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-				log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
+				utilities.Fragment(compressedPacket)
+
+				go log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+				go log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
 				if err != nil {
 					log.Println(err)
 					return
 				}
-				_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
-				if err != nil {
-					fmt.Println(err)
-					return
-				}
+				go func() {
+					_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
+					if err != nil {
+						fmt.Println(err)
+						return
+					}
+				}()
 			}
 			continue
 		}

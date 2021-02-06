@@ -253,7 +253,8 @@ func (client *Client) listen(server, port string) error {
 func (client *Client) handleIncomingConnections() {
 	defer client.waiter.Done()
 	defer client.conn.Close()
-	inputBytes := make([]byte, client.ifce.Mtu)
+	packetSize := client.ifce.Mtu - 28
+	inputBytes := make([]byte, packetSize)
 	for {
 		packet := new(utilities.Packet)
 		length, _, err := client.conn.ReadFromUDP(inputBytes)
@@ -292,7 +293,7 @@ func (client *Client) writeToIfce(packet []byte) {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println("Writting to Interface :", n)
+	go fmt.Println("Writting to Interface :", n)
 }
 
 func (client *Client) handleOutgoingConnections() {
@@ -308,7 +309,7 @@ func (client *Client) handleOutgoingConnections() {
 			continue
 		}
 
-		fmt.Println("Reading from interface:", length)
+		go fmt.Println("Reading from interface:", length)
 
 		if length > -4 {
 			_, err := ipv4.ParseHeader(buffer[:length])
@@ -345,7 +346,7 @@ func (client *Client) handleOutgoingConnections() {
 				if err != nil {
 					fmt.Println(err)
 				}
-				fmt.Println("Writting to tunnel:", n)
+				go fmt.Println("Writting to tunnel:", n)
 			}()
 		}
 	}
