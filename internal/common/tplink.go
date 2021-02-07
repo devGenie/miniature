@@ -95,6 +95,6 @@ func Encode(dataStructure interface{}) (encoded []byte, err error) {
 }
 
 func Fragment(data []byte) {
-	fragmentSize := len(data) / MAX_FRAGMENT_SIZE
-	fmt.Println("Fragment size", fragmentSize)
+	fragmentSiz := len(data) / MAX_FRAGMENT_SIZE
+	fmt.Println("Fragment size", fragmentSiz)
 }

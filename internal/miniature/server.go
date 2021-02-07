@@ -319,6 +319,8 @@ func (server *Server) createCA() error {
 }
 
 func (server *Server) generateServerCerts() error {
+	log.Println(server.Config.PublicIP)
+	log.Println(server.Config)
 	certPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "ca.crt")
 	privatekeyPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "privatekey.pem")
 	privateKeyBytes, certBytes, err := server.generateCerts(certPath, privatekeyPath)
