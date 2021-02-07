@@ -668,12 +668,13 @@ func (server *Server) readIfce() {
 				compressedPacket, err := Compress(encodedPacket)
 				utilities.Fragment(compressedPacket)
 
-				go log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-				go log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
 				if err != nil {
 					log.Println(err)
 					return
 				}
+
+				go log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+				go log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
 				go func() {
 					_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
 					if err != nil {
