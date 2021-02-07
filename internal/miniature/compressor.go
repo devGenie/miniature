@@ -8,7 +8,7 @@ import (
 
 // Compress compresses bytes passed to it and returns a compressed byte array
 func Compress(data []byte) (compressed []byte, err error) {
-	buff := make([]byte, len(data))
+	buff := make([]byte, 100*len(data))
 	n, err := lz4.CompressBlockHC(data, buff, 1)
 	if err != nil {
 		return nil, err
