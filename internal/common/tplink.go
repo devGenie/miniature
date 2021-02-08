@@ -24,7 +24,7 @@ const (
 	// SESSION sends session data
 	SESSION byte = 0x07
 	// MAX_FRAGMENT_SIZE is the maximum number of fragments
-	MAX_FRAGMENT_SIZE = 32
+	MAX_FRAGMENT_SIZE = 3
 )
 
 // Addr represents a HTTP address

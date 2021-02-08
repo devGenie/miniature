@@ -140,7 +140,7 @@ func (client *Client) AuthenticateUser() error {
 		return err
 	}
 
-	buf := make([]byte, 1400)
+	buf := make([]byte, 1380)
 	for {
 		_, err := conn.Read(buf)
 		if err != nil {
@@ -181,7 +181,7 @@ func (client *Client) AuthenticateUser() error {
 
 			log.Println("Client has been leased ", handshakePacket.ClientIP.IPAddr)
 			client.ifce = ifce
-			client.ifce.Mtu = 1500
+			client.ifce.Mtu = 100
 			client.ifce.IP = handshakePacket.ClientIP.IPAddr
 			gwIfce, gwIP, err := utilities.GetDefaultGateway()
 			if err != nil {
@@ -253,8 +253,7 @@ func (client *Client) listen(server, port string) error {
 func (client *Client) handleIncomingConnections() {
 	defer client.waiter.Done()
 	defer client.conn.Close()
-	packetSize := client.ifce.Mtu - 28
-	inputBytes := make([]byte, packetSize)
+	inputBytes := make([]byte, client.ifce.Mtu)
 	for {
 		packet := new(utilities.Packet)
 		length, _, err := client.conn.ReadFromUDP(inputBytes)
@@ -264,9 +263,9 @@ func (client *Client) handleIncomingConnections() {
 		}
 		fmt.Println("Reading from udp :", length)
 
-		//log.Printf("Recieved %d bytes \n", length)
 		decompressedPacket, err := Decompress(inputBytes[:length])
 		if err != nil {
+			log.Println("Error decompressing", length)
 			log.Println(err)
 			continue
 		}
@@ -300,12 +299,11 @@ func (client *Client) handleOutgoingConnections() {
 	defer client.waiter.Done()
 	log.Println("Handling outgoing connection")
 
-	packetSize := client.ifce.Mtu - 28
-	buffer := make([]byte, packetSize)
+	buffer := make([]byte, client.ifce.Mtu)
 	for {
 		length, err := client.ifce.Ifce.Read(buffer)
 		if err != nil {
-			log.Println(err)
+			log.Println("Error reading interface:", err)
 			continue
 		}
 
@@ -314,13 +312,13 @@ func (client *Client) handleOutgoingConnections() {
 		if length > -4 {
 			_, err := ipv4.ParseHeader(buffer[:length])
 			if err != nil {
-				log.Println(err)
+				log.Println("Error parsing header", err)
 				continue
 			}
 
 			encryptedData, nonce, err := codec.Encrypt(client.secret, buffer[:length])
 			if err != nil {
-				log.Println(err)
+				log.Println("Error encrypting", err)
 				continue
 			}
 
@@ -334,7 +332,7 @@ func (client *Client) handleOutgoingConnections() {
 
 			compressedPacket, err := Compress(encodedPacket)
 			if err != nil {
-				log.Println(err)
+				log.Println("Error compressing:", err)
 				continue
 			}
 
@@ -344,7 +342,7 @@ func (client *Client) handleOutgoingConnections() {
 			go func() {
 				n, err := client.conn.Write(compressedPacket)
 				if err != nil {
-					fmt.Println(err)
+					fmt.Println("Failed to write to tunnel", err)
 				}
 				go fmt.Println("Writting to tunnel:", n)
 			}()
@@ -383,7 +381,7 @@ func (client *Client) HeartBeat() {
 
 	compressedPacket, err := Compress(encodedPacket)
 	if err != nil {
-		log.Println(err)
+		log.Println("Error compressing", err)
 		return
 	}
 

@@ -540,7 +540,7 @@ func (server *Server) listenAndServe() {
 
 	server.socket = lstnConn
 	defer lstnConn.Close()
-	inputBytes := make([]byte, 1400)
+	inputBytes := make([]byte, server.tunInterface.Mtu)
 	packet := new(utilities.Packet)
 	for {
 		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
@@ -640,8 +640,7 @@ func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
 
-	packetSize := server.tunInterface.Mtu - 28
-	buffer := make([]byte, packetSize)
+	buffer := make([]byte, server.tunInterface.Mtu)
 	for {
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
@@ -676,7 +675,7 @@ func (server *Server) readIfce() {
 				go log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 				go log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
 				go func() {
-					_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
+					_, err = server.socket.WriteTo(encodedPacket, peer.Addr)
 					if err != nil {
 						fmt.Println(err)
 						return
