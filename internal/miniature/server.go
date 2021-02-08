@@ -45,6 +45,7 @@ type HandshakePacket struct {
 	ClientIP utilities.Addr
 	// The public key of the server to be used for encryption
 	ServerPublic crypto.PublicKey
+	DNSResolvers []string
 }
 
 // Server represents attributes of the VPN server
@@ -66,6 +67,7 @@ type ServerConfig struct {
 	Network               string
 	ListeningPort         int
 	PublicIP              string
+	DNSResolvers          []string
 	Metadata              struct {
 		Country       string `yaml:"Country"`
 		Organization  string `yaml:"Organization"`
@@ -322,7 +324,7 @@ func (server *Server) generateServerCerts() error {
 	privateKeyBytes, certBytes, err := server.generateCerts(certPath, privatekeyPath)
 
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	serverCertFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
@@ -497,6 +499,8 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	handshakePacket := new(HandshakePacket)
 	handshakePacket.ClientIP = clientIP
 	handshakePacket.ServerPublic = serverPublicKey
+	handshakePacket.DNSResolvers = server.Config.DNSResolvers
+	fmt.Println("DNS resolvers", server.Config.DNSResolvers)
 	packetHeaderData := utilities.PacketHeader{Flag: utilities.HANDSHAKE_ACCEPTED}
 
 	handshakePacketBytes, err := utilities.Encode(handshakePacket)
@@ -524,7 +528,7 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
 
-	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%v", server.Config.PublicIP, server.Config.ListeningPort))
+	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%v", server.Config.ListeningPort))
 	if err != nil {
 		log.Fatalln("Unable to listen on UDP socket:", err)
 	}
@@ -536,8 +540,7 @@ func (server *Server) listenAndServe() {
 
 	server.socket = lstnConn
 	defer lstnConn.Close()
-	packetSize := server.tunInterface.Mtu - 28
-	inputBytes := make([]byte, packetSize)
+	inputBytes := make([]byte, server.tunInterface.Mtu)
 	packet := new(utilities.Packet)
 	for {
 		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
@@ -662,17 +665,22 @@ func (server *Server) readIfce() {
 				}
 
 				compressedPacket, err := Compress(encodedPacket)
-				log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-				log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
+				utilities.Fragment(compressedPacket)
+
 				if err != nil {
 					log.Println(err)
 					return
 				}
-				_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
-				if err != nil {
-					fmt.Println(err)
-					return
-				}
+
+				go log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+				go log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
+				go func() {
+					_, err = server.socket.WriteTo(encodedPacket, peer.Addr)
+					if err != nil {
+						fmt.Println(err)
+						return
+					}
+				}()
 			}
 			continue
 		}

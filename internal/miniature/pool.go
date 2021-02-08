@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Pool is a pool of IP addresses
 type Pool struct {
 	Peers          map[string]*Peer
 	Reserve        []string
@@ -102,10 +103,12 @@ func (pool *Pool) NewPeer() *Peer {
 	return peer
 }
 
+// ConnectedPeersCount is the number of peers connected to the server
 func (pool *Pool) ConnectedPeersCount() int {
 	return len(pool.Peers)
 }
 
+// AvailableAddressesCount is the number of available ip addresses to be leased to peers
 func (pool *Pool) AvailableAddressesCount() int {
 	return len(pool.Reserve)
 }

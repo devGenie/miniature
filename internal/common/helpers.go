@@ -20,6 +20,9 @@ func RunCommand(command, arguments string) error {
 	commandArguments := strings.Split(arguments, " ")
 	cmd := exec.Command(command, commandArguments...)
 	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Error running ", command, arguments)
+	}
 	return err
 }
 
