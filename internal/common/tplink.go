@@ -50,9 +50,9 @@ type Packet struct {
 // TransmissionPacket holds information about a packet in transit
 type TransmissionPacket struct {
 	Data          []byte
-	Fragmented    bool
 	FragmentCount int
 	Index         int
+	ID            string
 }
 
 // TCP is a structure of a tcp datagram
@@ -106,4 +106,10 @@ func Fragment(data []byte) [][]byte {
 		packets = append(packets, data)
 	}
 	return packets
+}
+
+// PackFragments packs fragments before transmission
+func PackFragments(id string, packet []byte, sequence int, fragments int) TransmissionPacket {
+	return TransmissionPacket{ID: id, Data: packet, FragmentCount: fragments, Index: sequence}
+
 }
