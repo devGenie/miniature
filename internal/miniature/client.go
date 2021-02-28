@@ -181,7 +181,7 @@ func (client *Client) AuthenticateUser() error {
 
 			log.Println("Client has been leased ", handshakePacket.ClientIP.IPAddr)
 			client.ifce = ifce
-			client.ifce.Mtu = 100
+			client.ifce.Mtu = 1500
 			client.ifce.IP = handshakePacket.ClientIP.IPAddr
 			gwIfce, gwIP, err := utilities.GetDefaultGateway()
 			if err != nil {
@@ -277,9 +277,14 @@ func (client *Client) handleIncomingConnections() {
 
 		packetHeader := packet.PacketHeader
 		headerFlag := packetHeader.Flag
+		decryptedPayload, err := codec.Decrypt(client.secret, packet.Nonce, packet.Payload)
+		if err != nil {
+			log.Printf("Error decrypting data from the server \t Error : %s \n", err)
+			continue
+		}
 
 		if headerFlag == utilities.SESSION {
-			go client.writeToIfce(packet.Payload)
+			go client.writeToIfce(decryptedPayload)
 		} else {
 			log.Println("Expected headers not found")
 		}
@@ -287,19 +292,18 @@ func (client *Client) handleIncomingConnections() {
 }
 
 func (client *Client) writeToIfce(packet []byte) {
-	n, err := client.ifce.Ifce.Write(packet)
+	_, err := client.ifce.Ifce.Write(packet)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	go fmt.Println("Writting to Interface :", n)
 }
 
 func (client *Client) handleOutgoingConnections() {
 	defer client.waiter.Done()
 	log.Println("Handling outgoing connection")
 
-	buffer := make([]byte, client.ifce.Mtu)
+	buffer := make([]byte, 1300)
 	for {
 		length, err := client.ifce.Ifce.Read(buffer)
 		if err != nil {

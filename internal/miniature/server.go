@@ -103,7 +103,7 @@ func (server *Server) Run(config ServerConfig) {
 
 	ip := net.ParseIP(server.connectionPool.NetworkAddress)
 	fmt.Println("TunIP", server.connectionPool.NetworkAddress)
-	err = ifce.Configure(ip, ip, 1500)
+	err = ifce.Configure(ip, ip, 1300)
 	if err != nil {
 		log.Printf("Error: %s \n", err)
 		return
@@ -134,6 +134,18 @@ func (server *Server) Run(config ServerConfig) {
 	}
 
 	command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j MASQUERADE", gatewayIfce)
+	err = utilities.RunCommand("iptables", command)
+	if err != nil {
+		return
+	}
+
+	command = fmt.Sprintf("-t filter -I OUTPUT -o %s -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu", gatewayIfce)
+	err = utilities.RunCommand("iptables", command)
+	if err != nil {
+		return
+	}
+
+	command = fmt.Sprintf("-t filter -I FORWARD -o %s -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu", gatewayIfce)
 	err = utilities.RunCommand("iptables", command)
 	if err != nil {
 		return
@@ -540,7 +552,7 @@ func (server *Server) listenAndServe() {
 
 	server.socket = lstnConn
 	defer lstnConn.Close()
-	inputBytes := make([]byte, server.tunInterface.Mtu)
+	inputBytes := make([]byte, 1483)
 	packet := new(utilities.Packet)
 	for {
 		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
@@ -554,6 +566,7 @@ func (server *Server) listenAndServe() {
 			log.Println(err)
 			continue
 		}
+
 		err = utilities.Decode(packet, decompressedData)
 		if err != nil {
 			log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
@@ -565,6 +578,7 @@ func (server *Server) listenAndServe() {
 		nonce := packetHeader.Nonce
 		peer := server.connectionPool.GetPeer(packetHeader.Src)
 		peer.Addr = clientConn
+
 		decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
 		if err != nil {
 			log.Println("Failed to decrypt data")
@@ -573,9 +587,9 @@ func (server *Server) listenAndServe() {
 
 		switch headerFlag {
 		case utilities.HEARTBEAT:
-			server.handleHeartbeat(decryptedPayload)
+			go server.handleHeartbeat(decryptedPayload)
 		case utilities.SESSION:
-			server.handleConnection(peer, decryptedPayload)
+			go server.handleConnection(peer, decryptedPayload)
 		default:
 			log.Println("Expected headers not found")
 		}
@@ -586,6 +600,7 @@ func (server *Server) handleConnection(peer *Peer, packet []byte) {
 	server.connectionPool.Update(peer.IP, *peer)
 	_, err := server.tunInterface.Ifce.Write(packet)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 }
@@ -656,8 +671,9 @@ func (server *Server) readIfce() {
 			}
 			peer := server.connectionPool.GetPeer(header.Dst.String())
 			if peer != nil {
-				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION}
-				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: buffer[:length]}
+				encryptedData, nonce, err := codec.Encrypt(peer.ServerSecret, buffer[:length])
+				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
+				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
 				encodedPacket, err := utilities.Encode(sendPacket)
 				if err != nil {
 					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
@@ -665,17 +681,13 @@ func (server *Server) readIfce() {
 				}
 
 				compressedPacket, err := Compress(encodedPacket)
-				utilities.Fragment(compressedPacket)
 
 				if err != nil {
 					log.Println(err)
 					return
 				}
-
-				go log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-				go log.Printf("Sending %d bytes to %s \n", len(compressedPacket), peer.Addr.String())
 				go func() {
-					_, err = server.socket.WriteTo(encodedPacket, peer.Addr)
+					_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
 					if err != nil {
 						fmt.Println(err)
 						return
