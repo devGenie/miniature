@@ -203,9 +203,26 @@ func (server *Server) Run(config ServerConfig) {
 		}
 	}
 
-	server.waiter.Add(3)
+	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%v", server.Config.ListeningPort))
+	if err != nil {
+		log.Fatalln("Unable to listen on UDP socket:", err)
+	}
+
+	lstnConn, err := net.ListenUDP("udp4", lstnAddr)
+	if err != nil {
+		log.Fatalln("Unable to listen on UDP socket111:", err)
+	}
+
+	server.socket = lstnConn
+	defer lstnConn.Close()
+
+	server.waiter.Add(7)
 	go server.listenTLS()
 	go server.listenAndServe()
+	go server.listenAndServe()
+	go server.listenAndServe()
+	go server.readIfce()
+	go server.readIfce()
 	go server.readIfce()
 
 	server.waiter.Wait()
@@ -540,22 +557,9 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 func (server *Server) listenAndServe() {
 	defer server.waiter.Done()
 
-	lstnAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%v", server.Config.ListeningPort))
-	if err != nil {
-		log.Fatalln("Unable to listen on UDP socket:", err)
-	}
-
-	lstnConn, err := net.ListenUDP("udp4", lstnAddr)
-	if err != nil {
-		log.Fatalln("Unable to listen on UDP socket111:", err)
-	}
-
-	server.socket = lstnConn
-	defer lstnConn.Close()
-
 	for {
 		inputBytes := make([]byte, 1483)
-		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
+		length, clientConn, err := server.socket.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
 			continue

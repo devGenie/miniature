@@ -83,8 +83,12 @@ func (client *Client) Run(config ClientConfig) error {
 		}
 	}()
 
-	client.waiter.Add(2)
+	client.waiter.Add(6)
 	go client.handleIncomingConnections()
+	go client.handleIncomingConnections()
+	go client.handleIncomingConnections()
+	go client.handleOutgoingConnections()
+	go client.handleOutgoingConnections()
 	go client.handleOutgoingConnections()
 	client.waiter.Wait()
 
@@ -143,8 +147,8 @@ func (client *Client) AuthenticateUser() error {
 		return err
 	}
 
-	buf := make([]byte, 1380)
 	for {
+		buf := make([]byte, 1380)
 		_, err := conn.Read(buf)
 		if err != nil {
 			return err
@@ -239,8 +243,8 @@ func (client *Client) listen(server, port string) error {
 func (client *Client) handleIncomingConnections() {
 	defer client.waiter.Done()
 	defer client.conn.Close()
-	inputBytes := make([]byte, client.ifce.Mtu)
 	for {
+		inputBytes := make([]byte, client.ifce.Mtu)
 		if client.diconnectionCount < 3 {
 			packet := new(utilities.Packet)
 			length, _, err := client.conn.ReadFromUDP(inputBytes)
@@ -296,8 +300,8 @@ func (client *Client) handleOutgoingConnections() {
 	defer client.waiter.Done()
 	log.Println("Handling outgoing connection")
 
-	buffer := make([]byte, 1300)
 	for {
+		buffer := make([]byte, 1300)
 		length, err := client.ifce.Ifce.Read(buffer)
 		if err != nil {
 			log.Println("Error reading interface:", err)
