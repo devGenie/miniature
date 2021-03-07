@@ -31,6 +31,11 @@ certificatesdirectory: /etc/miniature/certs
 network: 10.2.0.0/24
 
 listeningport: 4321
+
+publicip: 172.18.0.2
+
+dnsresolvers:
+    - 1.1.1.1
 ```
 
 You can also start the server using `./server run`. This will use the default path to the configuration file (`/etc/miniature/config.yml`)
@@ -118,12 +123,12 @@ The client has only been tested only on linux at the moment.Plans are to port it
 
 **Todo**
 
-- [ ] Encryption/ Decryption
+- [x] Encryption/ Decryption
 
-- [ ] Authentication
+- [x] Authentication
 
-- [ ] Compression using LZO
+- [x] Compression using LZO
 
-- [ ] Data Fragmentation/ Defragmentation
+- [x] Data Fragmentation/ Defragmentation
 
-- [ ] DNS Forwarding
+- [x] DNS Forwarding
