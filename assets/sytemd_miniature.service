@@ -3,6 +3,7 @@ Description=Miniature
 
 [Service]
 ExecStart=/usr/local/bin/miniature run -config=/etc/miniature/config.yml
+Restart=always
 
 [Install]
 WantedBy=multi-user.target
