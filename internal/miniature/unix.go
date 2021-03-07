@@ -30,7 +30,7 @@ func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface st
 
 	// Setup routes
 	routes := []common.Route{
-		{Destination: "0.0.0.0/1", NextHop: tunnelIP, GWInterface: tunnelIface},
+		{Destination: "0.0.0.0/0", NextHop: tunnelIP, GWInterface: tunnelIface},
 		{Destination: "128.0.0.0/1", NextHop: tunnelIP, GWInterface: tunnelIface},
 		{Destination: serverIP, NextHop: defaultGWAddr, GWInterface: defaultGWIface},
 	}
@@ -41,5 +41,13 @@ func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface st
 			return nil
 		}
 	}
+	// Disable ipv6 on osx
+	command = fmt.Sprintf("./scripts/client/osx_disable_ipv6.sh")
+	err = utilities.RunCommand("/bin/sh", command)
+	if err != nil {
+		tmpFile.Close()
+		return err
+	}
+
 	return nil
 }
