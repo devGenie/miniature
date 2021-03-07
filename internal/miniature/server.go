@@ -533,7 +533,7 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 
 	peer.ServerSecret = serverKEX.ComputeSecret(serverPrivateKey, clientPublicKey)
 	log.Printf("Assigning client an IP address of %s \n", peer.IP)
-	log.Printf("The number of available IP's is now %v \n", len(server.ipPool))
+	log.Printf("The number of available IP's is now %d \n", server.connectionPool.AvailableAddressesCount())
 	return nil
 }
 
@@ -553,46 +553,50 @@ func (server *Server) listenAndServe() {
 	server.socket = lstnConn
 	defer lstnConn.Close()
 	inputBytes := make([]byte, 1483)
-	packet := new(utilities.Packet)
+
 	for {
 		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
 			continue
 		}
+		go func() {
+			decompressedData, err := Decompress(inputBytes[:length])
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			packet := new(utilities.Packet)
+			err = utilities.Decode(packet, decompressedData)
+			if err != nil {
+				log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
+				return
+			}
 
-		decompressedData, err := Decompress(inputBytes[:length])
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+			packetHeader := packet.PacketHeader
+			headerFlag := packetHeader.Flag
+			nonce := packetHeader.Nonce
+			peer := server.connectionPool.GetPeer(packetHeader.Src)
+			if peer == nil {
+				return
+			}
+			peer.Addr = clientConn
 
-		err = utilities.Decode(packet, decompressedData)
-		if err != nil {
-			log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
-			continue
-		}
+			decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
+			if err != nil {
+				log.Println("Failed to decrypt data")
+				return
+			}
 
-		packetHeader := packet.PacketHeader
-		headerFlag := packetHeader.Flag
-		nonce := packetHeader.Nonce
-		peer := server.connectionPool.GetPeer(packetHeader.Src)
-		peer.Addr = clientConn
-
-		decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
-		if err != nil {
-			log.Println("Failed to decrypt data")
-			continue
-		}
-
-		switch headerFlag {
-		case utilities.HEARTBEAT:
-			go server.handleHeartbeat(decryptedPayload)
-		case utilities.SESSION:
-			go server.handleConnection(peer, decryptedPayload)
-		default:
-			log.Println("Expected headers not found")
-		}
+			switch headerFlag {
+			case utilities.HEARTBEAT:
+				server.handleHeartbeat(decryptedPayload)
+			case utilities.SESSION:
+				server.handleConnection(peer, decryptedPayload)
+			default:
+				log.Println("Expected headers not found")
+			}
+		}()
 	}
 }
 
@@ -604,38 +608,6 @@ func (server *Server) handleConnection(peer *Peer, packet []byte) {
 		return
 	}
 }
-
-// func (server *Server) registerClient(addr *net.UDPAddr, payload []byte) {
-// 	peer := new(Peer)
-// 	err := utilities.Decode(peer, payload)
-// 	if err != nil {
-// 		log.Printf("Error decoding peer data \t Error : %s \n", err)
-// 		return
-// 	}
-
-// 	fmt.Printf("Registering client with IP address %s \n", peer.IP)
-// 	server.connectionPool.NewPeer(addr)
-// 	packet := new(utilities.Packet)
-// 	packet.PacketHeader = utilities.PacketHeader{Flag: utilities.SESSION_ACCEPTED}
-// 	packet.Payload = make([]byte, 0)
-
-// 	encodedPacket, err := utilities.Encode(packet)
-
-// 	if err != nil {
-// 		log.Printf("Error encoding peer packet \t Error : %s \n", err)
-// 		return
-// 	}
-
-// 	log.Printf("Sending session accepted response to peer at %s \n", addr)
-// 	writes, err := server.socket.WriteTo(encodedPacket, addr)
-
-// 	if err != nil {
-// 		log.Printf("Error writting bytes to socket, error : %s \n", err)
-// 	}
-// 	log.Printf("Written %v bytes to UDP socket \n", writes)
-// 	log.Printf("Total number of connections : %v \n", server.connectionPool.Size())
-// 	log.Printf("IP  addesses remaining in pool : %v \n", len(server.ipPool))
-// }
 
 func (server *Server) handleHeartbeat(packet []byte) {
 	peer := new(Peer)
