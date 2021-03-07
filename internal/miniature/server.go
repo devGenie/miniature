@@ -58,6 +58,7 @@ type Server struct {
 	Config         ServerConfig
 	connectionPool *Pool
 	waiter         sync.WaitGroup
+	metrics        *Metrics
 }
 
 // ServerConfig holds VPN server configurations
@@ -216,7 +217,10 @@ func (server *Server) Run(config ServerConfig) {
 	server.socket = lstnConn
 	defer lstnConn.Close()
 
-	server.waiter.Add(7)
+	server.metrics = initMetrics()
+	server.metrics.TimeStarted = time.Now().UnixNano()
+
+	server.waiter.Add(8)
 	go server.listenTLS()
 	go server.listenAndServe()
 	go server.listenAndServe()
@@ -224,6 +228,7 @@ func (server *Server) Run(config ServerConfig) {
 	go server.readIfce()
 	go server.readIfce()
 	go server.readIfce()
+	go startHTTPServer(server)
 
 	server.waiter.Wait()
 }
@@ -560,6 +565,7 @@ func (server *Server) listenAndServe() {
 	for {
 		inputBytes := make([]byte, 1483)
 		length, clientConn, err := server.socket.ReadFromUDP(inputBytes)
+		go server.metrics.Update(length, 0, 0, 0)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
 			continue
@@ -638,7 +644,7 @@ func (server *Server) readIfce() {
 			continue
 		}
 
-		go func(data []byte) {
+		go func(data []byte, length int) {
 			if length > -4 {
 				header, err := ipv4.ParseHeader(data)
 				if err != nil {
@@ -669,9 +675,11 @@ func (server *Server) readIfce() {
 						return
 					}
 
+					go server.metrics.Update(0, len(encodedPacket), len(compressedPacket), length)
+
 				}
 				return
 			}
-		}(buffer[:length])
+		}(buffer[:length], length)
 	}
 }
