@@ -11,15 +11,18 @@ import (
 )
 
 // SetDarwinClient sets up IP tables on Darwin hosts
-func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface string, tunnelIP string, serverIP string) error {
+func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface string, tunnelIP string, serverIP string, dnsServer string) error {
 	command := fmt.Sprintf("nat on %s from %s to any -> (%s) \n", defaultGWIface, tunnelIP, defaultGWIface)
 	tmpFile, err := ioutil.TempFile(os.TempDir(), "minature-")
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 	pfctl := []byte(command)
-	if _, err = tmpFile.Write(pfctl); err != nil {
+	_, err = tmpFile.Write(pfctl)
+	if err != nil {
 		log.Fatal("Failed to write to temporary file", err)
+		return err
 	}
+	fmt.Println(command)
 
 	command = fmt.Sprintf("-f %s", tmpFile.Name())
 	err = utilities.RunCommand("pfctl", command)
@@ -30,7 +33,7 @@ func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface st
 
 	// Setup routes
 	routes := []common.Route{
-		{Destination: "0.0.0.0/1", NextHop: tunnelIP, GWInterface: tunnelIface},
+		{Destination: "0.0.0.0/0", NextHop: tunnelIP, GWInterface: tunnelIface},
 		{Destination: "128.0.0.0/1", NextHop: tunnelIP, GWInterface: tunnelIface},
 		{Destination: serverIP, NextHop: defaultGWAddr, GWInterface: defaultGWIface},
 	}
@@ -41,5 +44,13 @@ func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface st
 			return nil
 		}
 	}
+	// Disable ipv6 on osx
+	command = fmt.Sprintf("./scripts/client/osx_setup_interfaces.sh %s", dnsServer)
+	err = utilities.RunCommand("/bin/sh", command)
+	if err != nil {
+		tmpFile.Close()
+		return err
+	}
+
 	return nil
 }

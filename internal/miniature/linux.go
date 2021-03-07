@@ -25,7 +25,7 @@ func SetUpLinuxClient(defaultGWIface string, defaultGWAddr string, tunnelIface s
 
 	// Setup routes
 	routes := []common.Route{
-		{Destination: "0.0.0.0/1", NextHop: tunnelIP, GWInterface: tunnelIface},
+		{Destination: "0.0.0.0/0", NextHop: tunnelIP, GWInterface: tunnelIface},
 		{Destination: "128.0.0.0/1", NextHop: tunnelIP, GWInterface: tunnelIface},
 		{Destination: serverIP, NextHop: defaultGWAddr, GWInterface: defaultGWIface},
 	}

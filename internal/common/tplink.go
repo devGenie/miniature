@@ -3,7 +3,6 @@ package common
 import (
 	"bytes"
 	"encoding/gob"
-	"fmt"
 	"log"
 	"net"
 )
@@ -23,8 +22,8 @@ const (
 	HEARTBEAT byte = 0x06
 	// SESSION sends session data
 	SESSION byte = 0x07
-	// MAX_FRAGMENT_SIZE is the maximum number of fragments
-	MAX_FRAGMENT_SIZE = 3
+	// FRAGMENT_SIZE size of each fragmented packet
+	FRAGMENT_SIZE int = 400
 )
 
 // Addr represents a HTTP address
@@ -51,9 +50,9 @@ type Packet struct {
 // TransmissionPacket holds information about a packet in transit
 type TransmissionPacket struct {
 	Data          []byte
-	Fragmented    bool
 	FragmentCount int
 	Index         int
+	ID            string
 }
 
 // TCP is a structure of a tcp datagram
@@ -94,7 +93,23 @@ func Encode(dataStructure interface{}) (encoded []byte, err error) {
 	return buffer.Bytes(), nil
 }
 
-func Fragment(data []byte) {
-	fragmentSiz := len(data) / MAX_FRAGMENT_SIZE
-	fmt.Println("Fragment size", fragmentSiz)
+// Fragment fragments packets over 1472 bytes
+func Fragment(data []byte) [][]byte {
+	packets := make([][]byte, 0, len(data)/FRAGMENT_SIZE+1)
+	var packet []byte
+	if len(data) > 1400 {
+		for len(data) >= FRAGMENT_SIZE {
+			packet, data = data[:FRAGMENT_SIZE], data[FRAGMENT_SIZE:]
+			packets = append(packets, packet)
+		}
+	} else {
+		packets = append(packets, data)
+	}
+	return packets
+}
+
+// PackFragments packs fragments before transmission
+func PackFragments(id string, packet []byte, sequence int, fragments int) TransmissionPacket {
+	return TransmissionPacket{ID: id, Data: packet, FragmentCount: fragments, Index: sequence}
+
 }
