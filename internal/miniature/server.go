@@ -552,48 +552,51 @@ func (server *Server) listenAndServe() {
 
 	server.socket = lstnConn
 	defer lstnConn.Close()
-	inputBytes := make([]byte, 1483)
-	packet := new(utilities.Packet)
+
 	for {
+		inputBytes := make([]byte, 1483)
 		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
 			continue
 		}
-		decompressedData, err := Decompress(inputBytes[:length])
-		if err != nil {
-			log.Println("Failed to decompress data: ", err)
-			return
-		}
-		err = utilities.Decode(packet, decompressedData)
-		if err != nil {
-			log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
-			return
-		}
+		go func(data []byte) {
+			decompressedData, err := Decompress(data)
+			if err != nil {
+				log.Println("Failed to decompress data: ", err)
+				return
+			}
+			packet := new(utilities.Packet)
+			err = utilities.Decode(packet, decompressedData)
+			if err != nil {
+				log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
+				return
+			}
 
-		packetHeader := packet.PacketHeader
-		headerFlag := packetHeader.Flag
-		nonce := packetHeader.Nonce
-		peer := server.connectionPool.GetPeer(packetHeader.Src)
-		if peer == nil {
-			return
-		}
-		peer.Addr = clientConn
+			packetHeader := packet.PacketHeader
+			headerFlag := packetHeader.Flag
+			nonce := packetHeader.Nonce
+			peer := server.connectionPool.GetPeer(packetHeader.Src)
+			if peer == nil {
+				return
+			}
+			peer.Addr = clientConn
 
-		decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
-		if err != nil {
-			log.Println("Failed to decrypt data")
-			return
-		}
+			decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
+			if err != nil {
+				log.Println("Failed to decrypt data")
+				return
+			}
 
-		switch headerFlag {
-		case utilities.HEARTBEAT:
-			go server.handleHeartbeat(decryptedPayload)
-		case utilities.SESSION:
-			go server.handleConnection(peer, decryptedPayload)
-		default:
-			log.Println("Expected headers not found")
-		}
+			switch headerFlag {
+			case utilities.HEARTBEAT:
+				server.handleHeartbeat(decryptedPayload)
+			case utilities.SESSION:
+				server.handleConnection(peer, decryptedPayload)
+			default:
+				log.Println("Expected headers not found")
+			}
+		}(inputBytes[:length])
 	}
 }
 
@@ -632,7 +635,7 @@ func (server *Server) readIfce() {
 			continue
 		}
 
-		go func(data []byte, length int) {
+		go func(data []byte) {
 			if length > -4 {
 				header, err := ipv4.ParseHeader(data)
 				if err != nil {
@@ -666,6 +669,6 @@ func (server *Server) readIfce() {
 				}
 				return
 			}
-		}(buffer[:length], length)
+		}(buffer[:length])
 	}
 }
