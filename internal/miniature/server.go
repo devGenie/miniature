@@ -553,7 +553,7 @@ func (server *Server) listenAndServe() {
 	server.socket = lstnConn
 	defer lstnConn.Close()
 	inputBytes := make([]byte, 1483)
-
+	packet := new(utilities.Packet)
 	for {
 		length, clientConn, err := lstnConn.ReadFromUDP(inputBytes)
 		if err != nil || length == 0 {
@@ -566,7 +566,6 @@ func (server *Server) listenAndServe() {
 				log.Println("Failed to decompress data: ", err)
 				return
 			}
-			packet := new(utilities.Packet)
 			err = utilities.Decode(packet, decompressedData)
 			if err != nil {
 				log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
