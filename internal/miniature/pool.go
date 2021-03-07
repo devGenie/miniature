@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Pool is a pool of IP addresses
 type Pool struct {
 	Peers          map[string]*Peer
 	Reserve        []string
@@ -61,6 +62,8 @@ func (pool *Pool) cleanupExpired() {
 		elapsedTime := timeSinceHeartBeat.Seconds()
 		if elapsedTime > pool.peerTimeOut {
 			log.Printf("%s has been quiet for %g. Removing after %g timeout \n", k, elapsedTime, pool.peerTimeOut)
+			v.Addr = nil
+			v = nil
 			delete(pool.Peers, k)
 			pool.Reserve = append(pool.Reserve, k)
 		}
@@ -102,10 +105,12 @@ func (pool *Pool) NewPeer() *Peer {
 	return peer
 }
 
+// ConnectedPeersCount is the number of peers connected to the server
 func (pool *Pool) ConnectedPeersCount() int {
 	return len(pool.Peers)
 }
 
+// AvailableAddressesCount is the number of available ip addresses to be leased to peers
 func (pool *Pool) AvailableAddressesCount() int {
 	return len(pool.Reserve)
 }

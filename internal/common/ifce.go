@@ -3,6 +3,7 @@ package common
 import (
 	"bufio"
 	"encoding/hex"
+	"errors"
 	"os/exec"
 
 	"fmt"
@@ -23,6 +24,13 @@ type Tun struct {
 	Remote     net.IP
 	SubnetMask net.IPMask
 	Mtu        int
+}
+
+// Route represens an ip route
+type Route struct {
+	Destination string
+	NextHop     string
+	GWInterface string
 }
 
 // NewInterface creates a new Tun interface
@@ -137,4 +145,38 @@ func GetDefaultGateway() (ifaceName string, gateway string, err error) {
 		return iface, ip, nil
 	}
 	return " ", "", nil
+}
+
+// AddRoute ...
+func AddRoute(route Route) error {
+	switch runtime.GOOS {
+	case "linux":
+		command := fmt.Sprintf("route add %s via %s", route.Destination, route.NextHop)
+		err := RunCommand("ip", command)
+		return err
+	case "darwin":
+		command := fmt.Sprintf("-n add -net %s %s", route.Destination, route.NextHop)
+		err := RunCommand("route", command)
+		return err
+	default:
+		err := errors.New("Operating system not supported")
+		return err
+	}
+}
+
+// DeleteRoute deletes a route to a destination network
+func DeleteRoute(route string) error {
+	switch runtime.GOOS {
+	case "linux":
+		command := fmt.Sprintf("route delete %s", route)
+		err := RunCommand("ip", command)
+		return err
+	case "darwin":
+		command := fmt.Sprintf("delete %s", route)
+		err := RunCommand("route", command)
+		return err
+	default:
+		err := errors.New("Operating system not supported")
+		return err
+	}
 }

@@ -10,24 +10,35 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"sync"
 
 	"github.com/aead/ecdh"
+	"github.com/devgenie/miniature/internal/common"
 	utilities "github.com/devgenie/miniature/internal/common"
 	codec "github.com/devgenie/miniature/internal/cryptography"
 	"golang.org/x/net/ipv4"
 )
 
+// DefaultGateway represents the default gateway of the client.
+type DefaultGateway struct {
+	Interface string
+	GatewayIP string
+}
+
 // Client represents a client connecting to the VPN server
 type Client struct {
-	ifce       *utilities.Tun
-	serverAddr *net.UDPAddr
-	conn       *net.UDPConn
-	waiter     sync.WaitGroup
-	config     ClientConfig
-	secret     []byte
+	ifce              *utilities.Tun
+	serverAddr        *net.UDPAddr
+	conn              *net.UDPConn
+	waiter            sync.WaitGroup
+	config            ClientConfig
+	secret            []byte
+	resolveFile       string
+	defaultGateway    DefaultGateway
+	diconnectionCount int
 }
 
 // ClientConfig holds the client configuration loaded from the yml configuration file
@@ -59,10 +70,24 @@ func (client *Client) Run(config ClientConfig) error {
 	}
 	defer client.conn.Close()
 
+	client.diconnectionCount = 0
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, os.Kill)
+	go func() {
+		select {
+		case sig := <-c:
+			log.Printf("Recieved %s signal, running some house keeping", sig)
+			client.CleanUp()
+			os.Exit(0)
+		}
+	}()
+
 	client.waiter.Add(2)
 	go client.handleIncomingConnections()
 	go client.handleOutgoingConnections()
 	client.waiter.Wait()
+
 	return nil
 }
 
@@ -118,7 +143,7 @@ func (client *Client) AuthenticateUser() error {
 		return err
 	}
 
-	buf := make([]byte, 512)
+	buf := make([]byte, 1380)
 	for {
 		_, err := conn.Read(buf)
 		if err != nil {
@@ -157,139 +182,34 @@ func (client *Client) AuthenticateUser() error {
 				return err
 			}
 
-			log.Println("Client has been assigned ", handshakePacket.ClientIP.IPAddr)
+			log.Println("Client has been leased ", handshakePacket.ClientIP.IPAddr)
 			client.ifce = ifce
 			client.ifce.Mtu = 1500
 			client.ifce.IP = handshakePacket.ClientIP.IPAddr
-			gwIfce, gw, err := utilities.GetDefaultGateway()
-			fmt.Println(gwIfce)
-			fmt.Println(gw)
+			gwIfce, gwIP, err := utilities.GetDefaultGateway()
 			if err != nil {
 				fmt.Println(err)
 				return err
 			}
 
-			command := "route delete 0.0.0.0/0"
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error deleting route message: %s \n", err)
-			}
-
-			command = "route delete 8.8.8.8"
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error deleting route message: %s \n", err)
-			}
-
-			command = fmt.Sprintf("route delete %s", client.config.ServerAddress)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error deleting route message: %s \n", err)
-			}
+			client.defaultGateway.GatewayIP = gwIP
+			client.defaultGateway.Interface = gwIfce
 
 			if runtime.GOOS == "linux" {
-				command = "-t nat -F"
-				err = utilities.RunCommand("iptables", command)
+				err := SetUpLinuxClient(client.defaultGateway.Interface, client.defaultGateway.GatewayIP, client.ifce.Ifce.Name(), client.ifce.IP.String(), client.config.ServerAddress)
 				if err != nil {
-					log.Fatalf("Error running '%s' \n", command)
-					return err
-				}
-
-				command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j SNAT --to-source %s", client.ifce.Ifce.Name(), client.ifce.IP)
-				err = utilities.RunCommand("iptables", command)
-				if err != nil {
-					log.Fatalf("Error running '%s', message: %s \n", command, err)
-					return err
-				}
-
-				command = "-P FORWARD ACCEPT"
-				err = utilities.RunCommand("iptables", command)
-				if err != nil {
-					log.Fatalf("Error running '%s' \n", command)
 					return err
 				}
 			} else if runtime.GOOS == "darwin" {
-				command = fmt.Sprintf("nat on %s from %s to any -> (%s) \n", gwIfce, client.ifce.IP, gwIfce)
-				tmpFile, err := ioutil.TempFile(os.TempDir(), "minature-")
-				defer os.Remove(tmpFile.Name())
-				defer tmpFile.Close()
-				pfctl := []byte(command)
-				if _, err = tmpFile.Write(pfctl); err != nil {
-					log.Fatal("Failed to write to temporary file", err)
-				}
-
-				command = fmt.Sprintf("-f %s", tmpFile.Name())
-				err = utilities.RunCommand("pfctl", command)
+				err := SetDarwinClient(client.defaultGateway.Interface, client.defaultGateway.GatewayIP, client.ifce.Ifce.Name(), client.ifce.IP.String(), client.config.ServerAddress, handshakePacket.DNSResolvers[0])
 				if err != nil {
-					log.Fatalf("Error running '%s' \n", command)
-					tmpFile.Close()
 					return err
 				}
 			}
-
-			command = fmt.Sprintf("route add %s via %s", client.config.ServerAddress, gw)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error running %s, message: %s \n", command, err)
+			err = client.setUpDNS(handshakePacket.DNSResolvers)
+			if err != nil {
+				return err
 			}
-
-			command = fmt.Sprintf("route add 0.0.0.0/0 via %s", client.ifce.IP)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error running %s, message: %s \n", command, err)
-			}
-
-			command = fmt.Sprintf("route add 1.1.1.1 via %s", client.ifce.IP)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error running %s, message: %s \n", command, err)
-			}
-
-			command = fmt.Sprintf("route add 8.8.8.8 via %s", client.ifce.IP)
-			if err = utilities.RunCommand("ip", command); err != nil {
-				log.Printf("Error running %s, message: %s \n", command, err)
-			}
-
-			// //"ip", "route", "add", gateway, "dev", devStr
-			// ifc, nme, err := common.GetDefaultGateway()
-			// fmt.Println(err)
-			// fmt.Println(ifc)
-			// fmt.Println(nme)
-
-			// log.Printf("Starting session, MTU of link is %s \n", client.ifce.Mtu)
-
-			// command := "route delete 0.0.0.0/0"
-			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error deleting route message: %s \n", err)
-			// }
-
-			// fmt.Println(client.config.ServerAddress)
-			// command := fmt.Sprintf("route add %s/32 via %s dev %s", client.config.ServerAddress, nme, ifc)
-			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error adding route to %s/32, message: %s \n", client.config.ServerAddress, err)
-			// }
-			//sudo route add -net 172.16.0.0/24 dev tun0
-			// command = fmt.Sprintf("route add 0.0.0.0/0 via %s dev %s", "10.2.0.1", client.ifce.Ifce.Name())
-			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error adding route to 0.0.0.0/0, message: %s \n", err)
-			// }
-
-			// command = fmt.Sprintf("route add %s via %s dev %s", client.config.ServerAddress, nme, ifc)
-			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error adding route to %s, message: %s \n", nme, err)
-			// }
-
-			// command = fmt.Sprintf("-A FORWARD -i %s -o %s -m state --state RELATED,ESTABLISHED -j ACCEPT", gatewayIfce, ifce.Ifce.Name())
-			// err = utilities.RunCommand("iptables", command)
-			// if err != nil {
-			// 	fmt.Println(err)
-			// }
-
-			// command = fmt.Sprintf("-A FORWARD -i %s -o %s -j ACCEPT", ifce.Ifce.Name(), gatewayIfce)
-			// err = utilities.RunCommand("iptables", command)
-			// if err != nil {
-			// 	fmt.Println(err)
-			// }
-
-			// command = fmt.Sprintf("-t nat -A POSTROUTING -o %s -j MASQUERADE", ifce.Ifce.Name())
-			// err = utilities.RunCommand("iptables", command)
-			// if err != nil {
-			// 	fmt.Println(err)
-			// }
 
 			client.StartHeartBeat()
 			break
@@ -321,99 +241,105 @@ func (client *Client) handleIncomingConnections() {
 	defer client.conn.Close()
 	inputBytes := make([]byte, client.ifce.Mtu)
 	for {
-		packet := new(utilities.Packet)
-		length, _, err := client.conn.ReadFromUDP(inputBytes)
-		if err != nil || length == 0 {
-			log.Printf("Error : %s \n", err)
-			continue
-		}
-		fmt.Println("Reading from udp :", length)
+		if client.diconnectionCount < 3 {
+			packet := new(utilities.Packet)
+			length, _, err := client.conn.ReadFromUDP(inputBytes)
+			if err != nil || length == 0 {
+				log.Printf("Error : %s \n", err)
+				client.diconnectionCount++
+				continue
+			}
 
-		//log.Printf("Recieved %d bytes \n", length)
-		decompressedPacket, err := Decompress(inputBytes[:length])
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		err = utilities.Decode(packet, decompressedPacket)
-		if err != nil {
-			log.Printf("Error decoding data from the server \t Error : %s \n", err)
-			continue
-		}
+			decompressedPacket, err := Decompress(inputBytes[:length])
+			if err != nil {
+				log.Println("Error decompressing", length)
+				log.Println(err)
+				continue
+			}
+			err = utilities.Decode(packet, decompressedPacket)
+			if err != nil {
+				log.Printf("Error decoding data from the server \t Error : %s \n", err)
+				continue
+			}
 
-		packetHeader := packet.PacketHeader
-		headerFlag := packetHeader.Flag
+			packetHeader := packet.PacketHeader
+			headerFlag := packetHeader.Flag
+			decryptedPayload, err := codec.Decrypt(client.secret, packet.Nonce, packet.Payload)
+			if err != nil {
+				log.Printf("Error decrypting data from the server \t Error : %s \n", err)
+				continue
+			}
 
-		if headerFlag == utilities.SESSION {
-			go client.writeToIfce(packet.Payload)
+			if headerFlag == utilities.SESSION {
+				go client.writeToIfce(decryptedPayload)
+			} else {
+				log.Println("Expected headers not found")
+			}
 		} else {
-			log.Println("Expected headers not found")
+			if err := client.AuthenticateUser(); err != nil {
+				log.Println(err)
+				return
+			}
 		}
 	}
 }
 
 func (client *Client) writeToIfce(packet []byte) {
-	n, err := client.ifce.Ifce.Write(packet)
+	_, err := client.ifce.Ifce.Write(packet)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println("Writting to Interface :", n)
 }
 
 func (client *Client) handleOutgoingConnections() {
 	defer client.waiter.Done()
 	log.Println("Handling outgoing connection")
 
-	packetSize := client.ifce.Mtu - 28
-	buffer := make([]byte, packetSize)
+	buffer := make([]byte, 1300)
 	for {
 		length, err := client.ifce.Ifce.Read(buffer)
 		if err != nil {
-			log.Println(err)
+			log.Println("Error reading interface:", err)
 			continue
 		}
-
-		fmt.Println("Reading from interface:", length)
-
-		if length > -4 {
-			_, err := ipv4.ParseHeader(buffer[:length])
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			encryptedData, nonce, err := codec.Encrypt(client.secret, buffer[:length])
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String()}
-			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
-			encodedPacket, err := utilities.Encode(sendPacket)
-			if err != nil {
-				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
-				break
-			}
-
-			compressedPacket, err := Compress(encodedPacket)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
-			// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-
-			go func() {
-				n, err := client.conn.Write(compressedPacket)
+		go func() {
+			if length > -4 {
+				_, err := ipv4.ParseHeader(buffer[:length])
 				if err != nil {
-					fmt.Println(err)
+					log.Println("Error parsing header", err)
+					return
 				}
-				fmt.Println("Writting to tunnel:", n)
-			}()
-		}
+
+				encryptedData, nonce, err := codec.Encrypt(client.secret, buffer[:length])
+				if err != nil {
+					log.Println("Error encrypting", err)
+					return
+				}
+
+				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String()}
+				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
+				encodedPacket, err := utilities.Encode(sendPacket)
+				if err != nil {
+					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
+					return
+				}
+
+				compressedPacket, err := Compress(encodedPacket)
+				if err != nil {
+					log.Println("Error compressing:", err)
+					return
+				}
+
+				// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
+				// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+
+				_, err = client.conn.Write(compressedPacket)
+				if err != nil {
+					fmt.Println("Failed to write to tunnel", err)
+				}
+			}
+		}()
 	}
 }
 
@@ -448,7 +374,7 @@ func (client *Client) HeartBeat() {
 
 	compressedPacket, err := Compress(encodedPacket)
 	if err != nil {
-		log.Println(err)
+		log.Println("Error compressing", err)
 		return
 	}
 
@@ -458,5 +384,52 @@ func (client *Client) HeartBeat() {
 	if err != nil {
 		fmt.Println(err)
 		return
+	}
+}
+
+func (client *Client) setUpDNS(resolvers []string) error {
+	oldResolveFileContents, err := ioutil.ReadFile("/etc/resolv.conf")
+	if err != nil {
+		return err
+	}
+	client.resolveFile = string(oldResolveFileContents)
+	content := "# Generated by miniature \n"
+	for _, resolver := range resolvers {
+		content += fmt.Sprintf("nameserver %s\n", resolver)
+	}
+	return ioutil.WriteFile("/etc/resolv.conf", []byte(content), 0644)
+}
+
+// ResetDNS resets the resolv.conf file to the one before the vpn client was started
+func (client *Client) ResetDNS() error {
+	err := ioutil.WriteFile("/etc/resolv.conf", []byte(client.resolveFile), 0644)
+	if err != nil {
+		log.Println("Failed to restore /etc/resolv.conf file, restore the file manually by copying the contents below and pasting them into /etc/resolve.conf file")
+		fmt.Println(client.resolveFile)
+	}
+	return err
+}
+
+// CleanUp cleans up the client after a shutdown
+func (client *Client) CleanUp() {
+	client.ResetDNS()
+
+	if runtime.GOOS == "darwin" {
+		command := fmt.Sprintf("-f %s", "/etc/pf.conf")
+		err := utilities.RunCommand("pfctl", command)
+		if err != nil {
+			log.Println(err)
+		}
+
+		routes := []common.Route{
+			{Destination: "0.0.0.0/0", NextHop: client.defaultGateway.GatewayIP, GWInterface: client.defaultGateway.GatewayIP},
+		}
+		for _, route := range routes {
+			common.DeleteRoute(route.Destination)
+			err := common.AddRoute(route)
+			if err != nil {
+				log.Println(err)
+			}
+		}
 	}
 }

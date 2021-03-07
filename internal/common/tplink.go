@@ -22,6 +22,8 @@ const (
 	HEARTBEAT byte = 0x06
 	// SESSION sends session data
 	SESSION byte = 0x07
+	// FRAGMENT_SIZE size of each fragmented packet
+	FRAGMENT_SIZE int = 400
 )
 
 // Addr represents a HTTP address
@@ -43,6 +45,14 @@ type PacketHeader struct {
 type Packet struct {
 	PacketHeader
 	Payload []byte
+}
+
+// TransmissionPacket holds information about a packet in transit
+type TransmissionPacket struct {
+	Data          []byte
+	FragmentCount int
+	Index         int
+	ID            string
 }
 
 // TCP is a structure of a tcp datagram
@@ -81,4 +91,25 @@ func Encode(dataStructure interface{}) (encoded []byte, err error) {
 	}
 
 	return buffer.Bytes(), nil
+}
+
+// Fragment fragments packets over 1472 bytes
+func Fragment(data []byte) [][]byte {
+	packets := make([][]byte, 0, len(data)/FRAGMENT_SIZE+1)
+	var packet []byte
+	if len(data) > 1400 {
+		for len(data) >= FRAGMENT_SIZE {
+			packet, data = data[:FRAGMENT_SIZE], data[FRAGMENT_SIZE:]
+			packets = append(packets, packet)
+		}
+	} else {
+		packets = append(packets, data)
+	}
+	return packets
+}
+
+// PackFragments packs fragments before transmission
+func PackFragments(id string, packet []byte, sequence int, fragments int) TransmissionPacket {
+	return TransmissionPacket{ID: id, Data: packet, FragmentCount: fragments, Index: sequence}
+
 }
