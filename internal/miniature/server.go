@@ -560,10 +560,10 @@ func (server *Server) listenAndServe() {
 			log.Println("Error: ", err)
 			continue
 		}
-		go func() {
-			decompressedData, err := Decompress(inputBytes[:length])
+		go func(data []byte) {
+			decompressedData, err := Decompress(data)
 			if err != nil {
-				log.Println(err)
+				log.Println("Failed to decompress data: ", err)
 				return
 			}
 			packet := new(utilities.Packet)
@@ -596,7 +596,7 @@ func (server *Server) listenAndServe() {
 			default:
 				log.Println("Expected headers not found")
 			}
-		}()
+		}(inputBytes[:length])
 	}
 }
 
@@ -635,38 +635,40 @@ func (server *Server) readIfce() {
 			continue
 		}
 
-		if length > -4 {
-			header, err := ipv4.ParseHeader(buffer[:length])
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			peer := server.connectionPool.GetPeer(header.Dst.String())
-			if peer != nil {
-				encryptedData, nonce, err := codec.Encrypt(peer.ServerSecret, buffer[:length])
-				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
-				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
-				encodedPacket, err := utilities.Encode(sendPacket)
-				if err != nil {
-					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
-					return
-				}
-
-				compressedPacket, err := Compress(encodedPacket)
-
+		go func(data []byte, length int) {
+			if length > -4 {
+				header, err := ipv4.ParseHeader(data)
 				if err != nil {
 					log.Println(err)
 					return
 				}
-				go func() {
+				peer := server.connectionPool.GetPeer(header.Dst.String())
+				if peer != nil {
+					encryptedData, nonce, err := codec.Encrypt(peer.ServerSecret, buffer[:length])
+					packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
+					sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
+					encodedPacket, err := utilities.Encode(sendPacket)
+					if err != nil {
+						log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
+						return
+					}
+
+					compressedPacket, err := Compress(encodedPacket)
+
+					if err != nil {
+						log.Println(err)
+						return
+					}
+
 					_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
 					if err != nil {
 						fmt.Println(err)
 						return
 					}
-				}()
+
+				}
+				return
 			}
-			continue
-		}
+		}(buffer[:length], length)
 	}
 }

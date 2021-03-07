@@ -303,9 +303,9 @@ func (client *Client) handleOutgoingConnections() {
 			log.Println("Error reading interface:", err)
 			continue
 		}
-		go func() {
+		go func(data []byte, length int) {
 			if length > -4 {
-				_, err := ipv4.ParseHeader(buffer[:length])
+				_, err := ipv4.ParseHeader(data)
 				if err != nil {
 					log.Println("Error parsing header", err)
 					return
@@ -339,7 +339,7 @@ func (client *Client) handleOutgoingConnections() {
 					fmt.Println("Failed to write to tunnel", err)
 				}
 			}
-		}()
+		}(buffer[:length], length)
 	}
 }
 
