@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/aead/ecdh"
+	"github.com/devgenie/miniature/internal/common"
 	utilities "github.com/devgenie/miniature/internal/common"
 	codec "github.com/devgenie/miniature/internal/cryptography"
 	"golang.org/x/net/ipv4"
@@ -29,14 +30,15 @@ type DefaultGateway struct {
 
 // Client represents a client connecting to the VPN server
 type Client struct {
-	ifce           *utilities.Tun
-	serverAddr     *net.UDPAddr
-	conn           *net.UDPConn
-	waiter         sync.WaitGroup
-	config         ClientConfig
-	secret         []byte
-	resolveFile    string
-	defaultGateway DefaultGateway
+	ifce              *utilities.Tun
+	serverAddr        *net.UDPAddr
+	conn              *net.UDPConn
+	waiter            sync.WaitGroup
+	config            ClientConfig
+	secret            []byte
+	resolveFile       string
+	defaultGateway    DefaultGateway
+	diconnectionCount int
 }
 
 // ClientConfig holds the client configuration loaded from the yml configuration file
@@ -68,6 +70,7 @@ func (client *Client) Run(config ClientConfig) error {
 	}
 	defer client.conn.Close()
 
+	client.diconnectionCount = 0
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, os.Kill)
@@ -198,28 +201,11 @@ func (client *Client) AuthenticateUser() error {
 					return err
 				}
 			} else if runtime.GOOS == "darwin" {
-				err := SetDarwinClient(client.defaultGateway.Interface, client.defaultGateway.GatewayIP, client.ifce.Ifce.Name(), client.ifce.IP.String(), client.config.ServerAddress)
+				err := SetDarwinClient(client.defaultGateway.Interface, client.defaultGateway.GatewayIP, client.ifce.Ifce.Name(), client.ifce.IP.String(), client.config.ServerAddress, handshakePacket.DNSResolvers[0])
 				if err != nil {
 					return err
 				}
 			}
-
-			// command = fmt.Sprintf("route add %s via %s", client.config.ServerAddress, client.defaultGateway.Interface)
-			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error running %s, message: %s \n", command, err)
-			// }
-
-			// command = fmt.Sprintf("route add 0.0.0.0/0 via %s", client.ifce.IP)
-			// if err = utilities.RunCommand("ip", command); err != nil {
-			// 	log.Printf("Error running %s, message: %s \n", command, err)
-			// }
-
-			// for _, dnsServer := range handshakePacket.DNSResolvers {
-			// 	command = fmt.Sprintf("route add %s via %s", dnsServer, client.ifce.IP)
-			// 	if err = utilities.RunCommand("ip", command); err != nil {
-			// 		log.Printf("Error running %s, message: %s \n", command, err)
-			// 	}
-			// }
 			err = client.setUpDNS(handshakePacket.DNSResolvers)
 			if err != nil {
 				return err
@@ -255,38 +241,45 @@ func (client *Client) handleIncomingConnections() {
 	defer client.conn.Close()
 	inputBytes := make([]byte, client.ifce.Mtu)
 	for {
-		packet := new(utilities.Packet)
-		length, _, err := client.conn.ReadFromUDP(inputBytes)
-		if err != nil || length == 0 {
-			log.Printf("Error : %s \n", err)
-			continue
-		}
-		fmt.Println("Reading from udp :", length)
+		if client.diconnectionCount < 3 {
+			packet := new(utilities.Packet)
+			length, _, err := client.conn.ReadFromUDP(inputBytes)
+			if err != nil || length == 0 {
+				log.Printf("Error : %s \n", err)
+				client.diconnectionCount++
+				continue
+			}
 
-		decompressedPacket, err := Decompress(inputBytes[:length])
-		if err != nil {
-			log.Println("Error decompressing", length)
-			log.Println(err)
-			continue
-		}
-		err = utilities.Decode(packet, decompressedPacket)
-		if err != nil {
-			log.Printf("Error decoding data from the server \t Error : %s \n", err)
-			continue
-		}
+			decompressedPacket, err := Decompress(inputBytes[:length])
+			if err != nil {
+				log.Println("Error decompressing", length)
+				log.Println(err)
+				continue
+			}
+			err = utilities.Decode(packet, decompressedPacket)
+			if err != nil {
+				log.Printf("Error decoding data from the server \t Error : %s \n", err)
+				continue
+			}
 
-		packetHeader := packet.PacketHeader
-		headerFlag := packetHeader.Flag
-		decryptedPayload, err := codec.Decrypt(client.secret, packet.Nonce, packet.Payload)
-		if err != nil {
-			log.Printf("Error decrypting data from the server \t Error : %s \n", err)
-			continue
-		}
+			packetHeader := packet.PacketHeader
+			headerFlag := packetHeader.Flag
+			decryptedPayload, err := codec.Decrypt(client.secret, packet.Nonce, packet.Payload)
+			if err != nil {
+				log.Printf("Error decrypting data from the server \t Error : %s \n", err)
+				continue
+			}
 
-		if headerFlag == utilities.SESSION {
-			go client.writeToIfce(decryptedPayload)
+			if headerFlag == utilities.SESSION {
+				go client.writeToIfce(decryptedPayload)
+			} else {
+				log.Println("Expected headers not found")
+			}
 		} else {
-			log.Println("Expected headers not found")
+			if err := client.AuthenticateUser(); err != nil {
+				log.Println(err)
+				return
+			}
 		}
 	}
 }
@@ -310,47 +303,43 @@ func (client *Client) handleOutgoingConnections() {
 			log.Println("Error reading interface:", err)
 			continue
 		}
+		go func() {
+			if length > -4 {
+				_, err := ipv4.ParseHeader(buffer[:length])
+				if err != nil {
+					log.Println("Error parsing header", err)
+					return
+				}
 
-		go fmt.Println("Reading from interface:", length)
+				encryptedData, nonce, err := codec.Encrypt(client.secret, buffer[:length])
+				if err != nil {
+					log.Println("Error encrypting", err)
+					return
+				}
 
-		if length > -4 {
-			_, err := ipv4.ParseHeader(buffer[:length])
-			if err != nil {
-				log.Println("Error parsing header", err)
-				continue
-			}
+				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String()}
+				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
+				encodedPacket, err := utilities.Encode(sendPacket)
+				if err != nil {
+					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
+					return
+				}
 
-			encryptedData, nonce, err := codec.Encrypt(client.secret, buffer[:length])
-			if err != nil {
-				log.Println("Error encrypting", err)
-				continue
-			}
+				compressedPacket, err := Compress(encodedPacket)
+				if err != nil {
+					log.Println("Error compressing:", err)
+					return
+				}
 
-			packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String()}
-			sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
-			encodedPacket, err := utilities.Encode(sendPacket)
-			if err != nil {
-				log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
-				break
-			}
+				// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
+				// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 
-			compressedPacket, err := Compress(encodedPacket)
-			if err != nil {
-				log.Println("Error compressing:", err)
-				continue
-			}
-
-			// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
-			// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-
-			go func() {
-				n, err := client.conn.Write(compressedPacket)
+				_, err = client.conn.Write(compressedPacket)
 				if err != nil {
 					fmt.Println("Failed to write to tunnel", err)
 				}
-				go fmt.Println("Writting to tunnel:", n)
-			}()
-		}
+			}
+		}()
 	}
 }
 
@@ -424,4 +413,23 @@ func (client *Client) ResetDNS() error {
 // CleanUp cleans up the client after a shutdown
 func (client *Client) CleanUp() {
 	client.ResetDNS()
+
+	if runtime.GOOS == "darwin" {
+		command := fmt.Sprintf("-f %s", "/etc/pf.conf")
+		err := utilities.RunCommand("pfctl", command)
+		if err != nil {
+			log.Println(err)
+		}
+
+		routes := []common.Route{
+			{Destination: "0.0.0.0/0", NextHop: client.defaultGateway.GatewayIP, GWInterface: client.defaultGateway.GatewayIP},
+		}
+		for _, route := range routes {
+			common.DeleteRoute(route.Destination)
+			err := common.AddRoute(route)
+			if err != nil {
+				log.Println(err)
+			}
+		}
+	}
 }
