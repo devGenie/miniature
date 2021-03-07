@@ -560,42 +560,40 @@ func (server *Server) listenAndServe() {
 			log.Println("Error: ", err)
 			continue
 		}
-		go func(data []byte) {
-			decompressedData, err := Decompress(data)
-			if err != nil {
-				log.Println("Failed to decompress data: ", err)
-				return
-			}
-			err = utilities.Decode(packet, decompressedData)
-			if err != nil {
-				log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
-				return
-			}
+		decompressedData, err := Decompress(inputBytes[:length])
+		if err != nil {
+			log.Println("Failed to decompress data: ", err)
+			return
+		}
+		err = utilities.Decode(packet, decompressedData)
+		if err != nil {
+			log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
+			return
+		}
 
-			packetHeader := packet.PacketHeader
-			headerFlag := packetHeader.Flag
-			nonce := packetHeader.Nonce
-			peer := server.connectionPool.GetPeer(packetHeader.Src)
-			if peer == nil {
-				return
-			}
-			peer.Addr = clientConn
+		packetHeader := packet.PacketHeader
+		headerFlag := packetHeader.Flag
+		nonce := packetHeader.Nonce
+		peer := server.connectionPool.GetPeer(packetHeader.Src)
+		if peer == nil {
+			return
+		}
+		peer.Addr = clientConn
 
-			decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
-			if err != nil {
-				log.Println("Failed to decrypt data")
-				return
-			}
+		decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
+		if err != nil {
+			log.Println("Failed to decrypt data")
+			return
+		}
 
-			switch headerFlag {
-			case utilities.HEARTBEAT:
-				server.handleHeartbeat(decryptedPayload)
-			case utilities.SESSION:
-				server.handleConnection(peer, decryptedPayload)
-			default:
-				log.Println("Expected headers not found")
-			}
-		}(inputBytes[:length])
+		switch headerFlag {
+		case utilities.HEARTBEAT:
+			go server.handleHeartbeat(decryptedPayload)
+		case utilities.SESSION:
+			go server.handleConnection(peer, decryptedPayload)
+		default:
+			log.Println("Expected headers not found")
+		}
 	}
 }
 
