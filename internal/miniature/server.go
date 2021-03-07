@@ -626,9 +626,8 @@ func (server *Server) handleHeartbeat(packet []byte) {
 func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
-
-	buffer := make([]byte, server.tunInterface.Mtu)
 	for {
+		buffer := make([]byte, server.tunInterface.Mtu)
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
 			log.Println(err)
