@@ -584,8 +584,8 @@ func (server *Server) listenAndServe() {
 			if peer == nil {
 				return
 			}
-			peer.Addr = clientConn
 
+			peer.Addr = clientConn
 			decryptedPayload, err := codec.Decrypt(peer.ServerSecret, decompressedData)
 			if err != nil {
 				log.Println("Failed to decrypt data")
@@ -655,7 +655,6 @@ func (server *Server) readIfce() {
 					}
 
 					compressedPacket, err := Compress(sendPacket)
-
 					if err != nil {
 						log.Println(err)
 						return
@@ -667,7 +666,6 @@ func (server *Server) readIfce() {
 						return
 					}
 					go server.metrics.Update(0, len(sendPacket), len(compressedPacket), length)
-
 				}
 				return
 			}

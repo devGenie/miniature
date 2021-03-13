@@ -26,8 +26,8 @@ func initMetrics() *Metrics {
 func (metrics *Metrics) Update(clientBytesRead int, bytesUncompressed int, bytesCompressed int, bytesRecieved int) {
 	metrics.mutex.Lock()
 	metrics.GatewayInterfaceBytesIn += bytesRecieved
-	metrics.TotalBytesCompressed += (bytesUncompressed - bytesCompressed)
-	metrics.UDPTunnelBytesOut += bytesCompressed
+	metrics.TotalBytesCompressed += bytesCompressed
+	metrics.UDPTunnelBytesOut += bytesUncompressed
 	metrics.UDPTunnelBytesIn += clientBytesRead
 	if clientBytesRead > 0 {
 		metrics.ConnectionsIn++

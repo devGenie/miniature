@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// HTTPServer ...
 type HTTPServer struct {
 	server *Server
 }
@@ -28,7 +29,7 @@ func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request
 		serverStats := new(stats)
 		serverStats.ConnectionsIn = httpServer.server.metrics.ConnectionsIn
 		serverStats.ConnectionsOut = httpServer.server.metrics.ConnectionsOut
-		serverStats.TotalBytesCompressed = httpServer.server.metrics.TotalBytesCompressed
+		serverStats.TotalBytesCompressed = (httpServer.server.metrics.UDPTunnelBytesOut - httpServer.server.metrics.TotalBytesCompressed)
 		serverStats.UDPTunnelBytesOut = httpServer.server.metrics.UDPTunnelBytesOut
 		serverStats.UDPTunnelBytesIn = httpServer.server.metrics.UDPTunnelBytesIn
 		serverStats.GatewayInterfaceBytesIn = httpServer.server.metrics.GatewayInterfaceBytesIn
