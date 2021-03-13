@@ -14,10 +14,11 @@ func Compress(data []byte) (compressed []byte, err error) {
 		return nil, err
 	}
 
-	if n >= len(data) || n == 0 {
-		err = errors.New("Data cannot be compressed")
-		return nil, err
-	}
+	// if n >= len(data) || n == 0 {
+	// 	fmt.Println(n)
+	// 	err = errors.New("Data cannot be compressed")
+	// 	return nil, err
+	// }
 
 	compressedData := buff[:n]
 	return compressedData, nil
