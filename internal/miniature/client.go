@@ -356,9 +356,10 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
-	sendPacket := append(encryptedData, client.ifce.IP...)
-	sendPacket = append(encryptedData, utilities.HEARTBEAT)
-	compressedPacket, err := Compress(sendPacket)
+	clintIP := client.ifce.IP[len(client.ifce.IP)-4:]
+	encryptedData = append(encryptedData, clintIP...)
+	encryptedData = append(encryptedData, utilities.HEARTBEAT)
+	compressedPacket, err := Compress(encryptedData)
 	if err != nil {
 		log.Println("Error compressing", err)
 		return
