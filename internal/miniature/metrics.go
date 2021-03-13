@@ -6,14 +6,14 @@ import (
 
 //Metrics handles server metrics
 type Metrics struct {
-	TimeStarted          int64
-	TotalBytesRecieved   int
-	TotalClientBytesRead int
-	TotalBytesSent       int
-	TotalBytesCompressed int
-	ConnectionsIn        int
-	ConnectionsOut       int
-	mutex                *sync.Mutex
+	TimeStarted             int64
+	GatewayInterfaceBytesIn int
+	UDPTunnelBytesIn        int
+	UDPTunnelBytesOut       int
+	TotalBytesCompressed    int
+	ConnectionsIn           int
+	ConnectionsOut          int
+	mutex                   *sync.Mutex
 }
 
 func initMetrics() *Metrics {
@@ -25,11 +25,10 @@ func initMetrics() *Metrics {
 // Update updates metrics
 func (metrics *Metrics) Update(clientBytesRead int, bytesUncompressed int, bytesCompressed int, bytesRecieved int) {
 	metrics.mutex.Lock()
-	metrics.TotalBytesRecieved += bytesRecieved
-	metrics.TotalBytesCompressed += bytesCompressed
-	metrics.TotalBytesSent += bytesUncompressed
-	metrics.TotalClientBytesRead += clientBytesRead
-
+	metrics.GatewayInterfaceBytesIn += bytesRecieved
+	metrics.TotalBytesCompressed += (bytesUncompressed - bytesCompressed)
+	metrics.UDPTunnelBytesOut += bytesCompressed
+	metrics.UDPTunnelBytesIn += clientBytesRead
 	if clientBytesRead > 0 {
 		metrics.ConnectionsIn++
 	} else {

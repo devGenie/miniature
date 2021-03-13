@@ -246,7 +246,6 @@ func (client *Client) handleIncomingConnections() {
 	for {
 		inputBytes := make([]byte, client.ifce.Mtu)
 		if client.diconnectionCount < 3 {
-			packet := new(utilities.Packet)
 			length, _, err := client.conn.ReadFromUDP(inputBytes)
 			if err != nil || length == 0 {
 				log.Printf("Error : %s \n", err)
@@ -260,19 +259,16 @@ func (client *Client) handleIncomingConnections() {
 				log.Println(err)
 				continue
 			}
-			err = utilities.Decode(packet, decompressedPacket)
-			if err != nil {
-				log.Printf("Error decoding data from the server \t Error : %s \n", err)
-				continue
-			}
 
-			decryptedPayload, err := codec.Decrypt(client.secret, packet.Nonce, packet.Payload)
+			flag := decompressedPacket[len(decompressedPacket)-1]
+			decompressedPacket = decompressedPacket[:len(decompressedPacket)-1]
+			decryptedPayload, err := codec.Decrypt(client.secret, decompressedPacket)
 			if err != nil {
 				log.Printf("Error decrypting data from the server \t Error : %s \n", err)
 				continue
 			}
 
-			if packet.Flag == utilities.SESSION {
+			if flag == utilities.SESSION {
 				go client.writeToIfce(decryptedPayload)
 			} else {
 				log.Println("Expected headers not found")
@@ -313,25 +309,20 @@ func (client *Client) handleOutgoingConnections() {
 					return
 				}
 
-				encryptedData, nonce, err := codec.Encrypt(client.secret, buffer[:length])
+				encryptedData, err := codec.Encrypt(client.secret, buffer[:length])
 				if err != nil {
 					log.Println("Error encrypting", err)
 					return
 				}
 
-				sendPacket := utilities.Packet{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String(), Payload: encryptedData}
-				encodedPacket, err := utilities.Encode(sendPacket)
-				if err != nil {
-					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
-					return
-				}
-
-				compressedPacket, err := Compress(encodedPacket)
+				clintIP := client.ifce.IP[len(client.ifce.IP)-4:]
+				encryptedData = append(encryptedData, clintIP...)
+				encryptedData = append(encryptedData, utilities.SESSION)
+				compressedPacket, err := Compress(encryptedData)
 				if err != nil {
 					log.Println("Error compressing:", err)
 					return
 				}
-
 				// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
 				// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 
@@ -359,20 +350,15 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
-	encryptedData, nonce, err := codec.Encrypt(client.secret, encodedPeer)
+	encryptedData, err := codec.Encrypt(client.secret, encodedPeer)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	sendPacket := utilities.Packet{Flag: utilities.HEARTBEAT, Nonce: nonce, Src: client.ifce.IP.String(), Payload: encryptedData}
-	encodedPacket, err := utilities.Encode(sendPacket)
-	if err != nil {
-		log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
-		return
-	}
-
-	compressedPacket, err := Compress(encodedPacket)
+	sendPacket := append(encryptedData, client.ifce.IP...)
+	sendPacket = append(encryptedData, utilities.HEARTBEAT)
+	compressedPacket, err := Compress(sendPacket)
 	if err != nil {
 		log.Println("Error compressing", err)
 		return

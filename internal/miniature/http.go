@@ -12,15 +12,15 @@ type HTTPServer struct {
 }
 
 type stats struct {
-	TimeElapsed          string
-	TotalBytesRecieved   int
-	TotalClientBytesRead int
-	TotalBytesSent       int
-	TotalBytesCompressed int
-	ConnectionsIn        int
-	ConnectionsOut       int
-	Peers                int
-	AvailableSlots       int
+	TimeElapsed             string
+	GatewayInterfaceBytesIn int
+	UDPTunnelBytesIn        int
+	UDPTunnelBytesOut       int
+	TotalBytesCompressed    int
+	ConnectionsIn           int
+	ConnectionsOut          int
+	Peers                   int
+	AvailableSlots          int
 }
 
 func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -29,9 +29,9 @@ func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request
 		serverStats.ConnectionsIn = httpServer.server.metrics.ConnectionsIn
 		serverStats.ConnectionsOut = httpServer.server.metrics.ConnectionsOut
 		serverStats.TotalBytesCompressed = httpServer.server.metrics.TotalBytesCompressed
-		serverStats.TotalBytesSent = httpServer.server.metrics.TotalBytesSent
-		serverStats.TotalClientBytesRead = httpServer.server.metrics.TotalClientBytesRead
-		serverStats.TotalBytesRecieved = httpServer.server.metrics.TotalBytesRecieved
+		serverStats.UDPTunnelBytesOut = httpServer.server.metrics.UDPTunnelBytesOut
+		serverStats.UDPTunnelBytesIn = httpServer.server.metrics.UDPTunnelBytesIn
+		serverStats.GatewayInterfaceBytesIn = httpServer.server.metrics.GatewayInterfaceBytesIn
 		serverStats.Peers = httpServer.server.connectionPool.ConnectedPeersCount()
 		serverStats.AvailableSlots = httpServer.server.connectionPool.AvailableAddressesCount()
 		timeStarted := time.Unix(0, httpServer.server.metrics.TimeStarted)

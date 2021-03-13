@@ -575,22 +575,18 @@ func (server *Server) listenAndServe() {
 				log.Println("Failed to decompress data: ", err)
 				return
 			}
-			packet := new(utilities.Packet)
-			err = utilities.Decode(packet, decompressedData)
-			if err != nil {
-				log.Printf("An error occured while parsing packets recieved from client \t Error : %s \n", err)
-				return
-			}
 
-			headerFlag := packet.Flag
-			nonce := packet.Nonce
-			peer := server.connectionPool.GetPeer(packet.Src)
+			headerData := decompressedData[len(decompressedData)-5:]
+			decompressedData = decompressedData[:len(decompressedData)-5]
+			srcIP := net.IP(headerData[:4])
+			headerFlag := headerData[4]
+			peer := server.connectionPool.GetPeer(srcIP.String())
 			if peer == nil {
 				return
 			}
 			peer.Addr = clientConn
 
-			decryptedPayload, err := codec.Decrypt(peer.ServerSecret, nonce, packet.Payload)
+			decryptedPayload, err := codec.Decrypt(peer.ServerSecret, decompressedData)
 			if err != nil {
 				log.Println("Failed to decrypt data")
 				return
@@ -651,15 +647,14 @@ func (server *Server) readIfce() {
 				}
 				peer := server.connectionPool.GetPeer(header.Dst.String())
 				if peer != nil {
-					encryptedData, nonce, err := codec.Encrypt(peer.ServerSecret, buffer[:length])
-					sendPacket := utilities.Packet{Flag: utilities.SESSION, Nonce: nonce, Payload: encryptedData}
-					encodedPacket, err := utilities.Encode(sendPacket)
+					encryptedData, err := codec.Encrypt(peer.ServerSecret, buffer[:length])
+					sendPacket := append(encryptedData, utilities.SESSION)
 					if err != nil {
 						log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
 						return
 					}
 
-					compressedPacket, err := Compress(encodedPacket)
+					compressedPacket, err := Compress(sendPacket)
 
 					if err != nil {
 						log.Println(err)
@@ -671,8 +666,7 @@ func (server *Server) readIfce() {
 						fmt.Println(err)
 						return
 					}
-
-					go server.metrics.Update(0, len(encodedPacket), len(compressedPacket), length)
+					go server.metrics.Update(0, len(sendPacket), len(compressedPacket), length)
 
 				}
 				return
