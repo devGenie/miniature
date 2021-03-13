@@ -36,7 +36,6 @@ func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface st
 		{Destination: "0.0.0.0/0", NextHop: tunnelIP, GWInterface: tunnelIface},
 		{Destination: "128.0.0.0/1", NextHop: tunnelIP, GWInterface: tunnelIface},
 		{Destination: serverIP, NextHop: defaultGWAddr, GWInterface: defaultGWIface},
-		{Destination: "1.1.1.1", NextHop: defaultGWAddr, GWInterface: defaultGWIface},
 	}
 	for _, route := range routes {
 		common.DeleteRoute(route.Destination)
