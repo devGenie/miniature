@@ -33,36 +33,12 @@ type Addr struct {
 	Gateway net.IP
 }
 
-// PacketHeader represents header data in a packet
-type PacketHeader struct {
-	Src   string
-	Flag  byte
-	Plen  uint16
-	Nonce []byte
-}
-
 // Packet is a structure representing a packet
 type Packet struct {
-	PacketHeader
+	Flag    byte
+	Src     string
+	Nonce   []byte
 	Payload []byte
-}
-
-// TransmissionPacket holds information about a packet in transit
-type TransmissionPacket struct {
-	Data          []byte
-	FragmentCount int
-	Index         int
-	ID            string
-}
-
-// TCP is a structure of a tcp datagram
-type TCP struct {
-	TCPSrc    string
-	TCPDst    string
-	TCPSeqNum int
-	TCPackNum int
-	TCPHdrLen int
-	TCPFin    []byte
 }
 
 // Decode recieves data as a byte array and decodes it to the passed dataStructure
@@ -106,10 +82,4 @@ func Fragment(data []byte) [][]byte {
 		packets = append(packets, data)
 	}
 	return packets
-}
-
-// PackFragments packs fragments before transmission
-func PackFragments(id string, packet []byte, sequence int, fragments int) TransmissionPacket {
-	return TransmissionPacket{ID: id, Data: packet, FragmentCount: fragments, Index: sequence}
-
 }

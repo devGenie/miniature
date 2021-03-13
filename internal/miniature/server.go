@@ -498,7 +498,7 @@ func (server *Server) handleTLS(conn net.Conn) {
 		if err != nil {
 			break
 		}
-		if packet.PacketHeader.Flag == utilities.HANDSHAKE {
+		if packet.Flag == utilities.HANDSHAKE {
 			err = server.handleHandshake(conn, packet.Payload)
 			if err != nil {
 				fmt.Println(err)
@@ -535,14 +535,13 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	handshakePacket.ServerPublic = serverPublicKey
 	handshakePacket.DNSResolvers = server.Config.DNSResolvers
 	fmt.Println("DNS resolvers", server.Config.DNSResolvers)
-	packetHeaderData := utilities.PacketHeader{Flag: utilities.HANDSHAKE_ACCEPTED}
 
 	handshakePacketBytes, err := utilities.Encode(handshakePacket)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
-	packetData := utilities.Packet{PacketHeader: packetHeaderData, Payload: handshakePacketBytes}
+	packetData := utilities.Packet{Flag: utilities.HANDSHAKE_ACCEPTED, Payload: handshakePacketBytes}
 	encodedPacket, err := utilities.Encode(packetData)
 	if err != nil {
 		log.Printf("Error encoding packet \t Error : %s \n", err)
@@ -583,10 +582,9 @@ func (server *Server) listenAndServe() {
 				return
 			}
 
-			packetHeader := packet.PacketHeader
-			headerFlag := packetHeader.Flag
-			nonce := packetHeader.Nonce
-			peer := server.connectionPool.GetPeer(packetHeader.Src)
+			headerFlag := packet.Flag
+			nonce := packet.Nonce
+			peer := server.connectionPool.GetPeer(packet.Src)
 			if peer == nil {
 				return
 			}
@@ -654,8 +652,7 @@ func (server *Server) readIfce() {
 				peer := server.connectionPool.GetPeer(header.Dst.String())
 				if peer != nil {
 					encryptedData, nonce, err := codec.Encrypt(peer.ServerSecret, buffer[:length])
-					packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce}
-					sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
+					sendPacket := utilities.Packet{Flag: utilities.SESSION, Nonce: nonce, Payload: encryptedData}
 					encodedPacket, err := utilities.Encode(sendPacket)
 					if err != nil {
 						log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)

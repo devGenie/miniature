@@ -130,13 +130,13 @@ func (client *Client) AuthenticateUser() error {
 	if err != nil {
 		log.Println("Client's public key is not on curve")
 	}
-	packetHeader := utilities.PacketHeader{Flag: utilities.HANDSHAKE}
+
 	publicKeyBytes, err := utilities.Encode(clientPublicKey)
 	if err != nil {
 		return err
 	}
 
-	packet := utilities.Packet{PacketHeader: packetHeader, Payload: publicKeyBytes}
+	packet := utilities.Packet{Flag: utilities.HANDSHAKE, Payload: publicKeyBytes}
 	encodedData, err := utilities.Encode(&packet)
 	if err != nil {
 		return err
@@ -160,7 +160,7 @@ func (client *Client) AuthenticateUser() error {
 			return err
 		}
 
-		if packetReply.PacketHeader.Flag == utilities.HANDSHAKE_ACCEPTED {
+		if packetReply.Flag == utilities.HANDSHAKE_ACCEPTED {
 			log.Println("Server Handshake accepted, configuring client interfaces")
 			conn.Close()
 			handshakePacket := new(HandshakePacket)
@@ -266,15 +266,13 @@ func (client *Client) handleIncomingConnections() {
 				continue
 			}
 
-			packetHeader := packet.PacketHeader
-			headerFlag := packetHeader.Flag
 			decryptedPayload, err := codec.Decrypt(client.secret, packet.Nonce, packet.Payload)
 			if err != nil {
 				log.Printf("Error decrypting data from the server \t Error : %s \n", err)
 				continue
 			}
 
-			if headerFlag == utilities.SESSION {
+			if packet.Flag == utilities.SESSION {
 				go client.writeToIfce(decryptedPayload)
 			} else {
 				log.Println("Expected headers not found")
@@ -321,8 +319,7 @@ func (client *Client) handleOutgoingConnections() {
 					return
 				}
 
-				packetHeader := utilities.PacketHeader{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String()}
-				sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
+				sendPacket := utilities.Packet{Flag: utilities.SESSION, Nonce: nonce, Src: client.ifce.IP.String(), Payload: encryptedData}
 				encodedPacket, err := utilities.Encode(sendPacket)
 				if err != nil {
 					log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
@@ -368,8 +365,7 @@ func (client *Client) HeartBeat() {
 		return
 	}
 
-	packetHeader := utilities.PacketHeader{Flag: utilities.HEARTBEAT, Nonce: nonce, Src: client.ifce.IP.String()}
-	sendPacket := utilities.Packet{PacketHeader: packetHeader, Payload: encryptedData}
+	sendPacket := utilities.Packet{Flag: utilities.HEARTBEAT, Nonce: nonce, Src: client.ifce.IP.String(), Payload: encryptedData}
 	encodedPacket, err := utilities.Encode(sendPacket)
 	if err != nil {
 		log.Printf("An error occured while trying to encode this packet \t Error : %s \n", err)
