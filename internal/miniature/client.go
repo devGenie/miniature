@@ -83,12 +83,8 @@ func (client *Client) Run(config ClientConfig) error {
 		}
 	}()
 
-	client.waiter.Add(6)
+	client.waiter.Add(2)
 	go client.handleIncomingConnections()
-	go client.handleIncomingConnections()
-	go client.handleIncomingConnections()
-	go client.handleOutgoingConnections()
-	go client.handleOutgoingConnections()
 	go client.handleOutgoingConnections()
 	client.waiter.Wait()
 

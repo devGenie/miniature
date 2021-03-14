@@ -12,21 +12,21 @@ type HTTPServer struct {
 	server *Server
 }
 
-type stats struct {
-	TimeElapsed             string
-	GatewayInterfaceBytesIn int
-	UDPTunnelBytesIn        int
-	UDPTunnelBytesOut       int
-	TotalBytesCompressed    int
-	ConnectionsIn           int
-	ConnectionsOut          int
-	Peers                   int
-	AvailableSlots          int
+type Stats struct {
+	TimeElapsed             string `json:"TimeElapsed"`
+	GatewayInterfaceBytesIn int    `json:"GatewayInterfaceBytesIn"`
+	UDPTunnelBytesIn        int    `json:"UDPTunnelBytesIn"`
+	UDPTunnelBytesOut       int    `json:"UDPTunnelBytesOut"`
+	TotalBytesCompressed    int    `json:"TotalBytesCompressed"`
+	ConnectionsIn           int    `json:"ConnectionsIn"`
+	ConnectionsOut          int    `json:"ConnectionsOut"`
+	Peers                   int    `json:"Peers"`
+	AvailableSlots          int    `json:"AvailableSlots"`
 }
 
 func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
-		serverStats := new(stats)
+		serverStats := new(Stats)
 		serverStats.ConnectionsIn = httpServer.server.metrics.ConnectionsIn
 		serverStats.ConnectionsOut = httpServer.server.metrics.ConnectionsOut
 		serverStats.TotalBytesCompressed = (httpServer.server.metrics.UDPTunnelBytesOut - httpServer.server.metrics.TotalBytesCompressed)
