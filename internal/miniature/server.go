@@ -225,6 +225,10 @@ func (server *Server) Run(config ServerConfig) {
 	go server.listenAndServe()
 	go server.listenAndServe()
 	go server.listenAndServe()
+	go server.listenAndServe()
+	go server.listenAndServe()
+	go server.readIfce()
+	go server.readIfce()
 	go server.readIfce()
 	go server.readIfce()
 	go server.readIfce()
@@ -490,7 +494,6 @@ func (server *Server) handleTLS(conn net.Conn) {
 	for {
 		_, err := conn.Read(buffer)
 		if err != nil {
-			log.Printf("Connection to %s closed \n", conn.RemoteAddr().String())
 			break
 		}
 		packet := new(utilities.Packet)
@@ -553,8 +556,6 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	}
 
 	peer.ServerSecret = serverKEX.ComputeSecret(serverPrivateKey, clientPublicKey)
-	log.Printf("Assigning client an IP address of %s \n", peer.IP)
-	log.Printf("The number of available IP's is now %d \n", server.connectionPool.AvailableAddressesCount())
 	return nil
 }
 
@@ -624,7 +625,6 @@ func (server *Server) handleHeartbeat(packet []byte) {
 	peer.Addr = oldPeer.Addr
 	peer.ServerSecret = oldPeer.ServerSecret
 	server.connectionPool.Update(oldPeer.IP, *peer)
-	log.Println("Recieved heartbeat from peer at ", peer.IP)
 }
 
 func (server *Server) readIfce() {
