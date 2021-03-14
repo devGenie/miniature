@@ -220,17 +220,9 @@ func (server *Server) Run(config ServerConfig) {
 	server.metrics = initMetrics()
 	server.metrics.TimeStarted = time.Now().UnixNano()
 
-	server.waiter.Add(8)
+	server.waiter.Add(5)
 	go server.listenTLS()
 	go server.listenAndServe()
-	go server.listenAndServe()
-	go server.listenAndServe()
-	go server.listenAndServe()
-	go server.listenAndServe()
-	go server.readIfce()
-	go server.readIfce()
-	go server.readIfce()
-	go server.readIfce()
 	go server.readIfce()
 	go startHTTPServer(server)
 
