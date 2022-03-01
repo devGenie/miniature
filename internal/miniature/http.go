@@ -24,6 +24,17 @@ type Stats struct {
 	AvailableSlots          int    `json:"AvailableSlots"`
 }
 
+func startHTTPServer(miniatureServer *Server) error {
+	defer miniatureServer.waiter.Done()
+	httpServer := new(HTTPServer)
+	httpServer.server = miniatureServer
+	http.HandleFunc("/stats", httpServer.handleStats)
+	http.HandleFunc("/client", httpServer.createClientConfig)
+	log.Println("Server started at 8080")
+	err := http.ListenAndServe("127.0.0.1:8080", nil)
+	return err
+}
+
 func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		serverStats := new(Stats)
@@ -44,12 +55,14 @@ func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func startHTTPServer(miniatureServer *Server) error {
-	defer miniatureServer.waiter.Done()
-	httpServer := new(HTTPServer)
-	httpServer.server = miniatureServer
-	http.HandleFunc("/stats", httpServer.handleStats)
-	log.Println("Server started at 8080")
-	err := http.ListenAndServe("127.0.0.1:8080", nil)
-	return err
+func (httpServer *HTTPServer) createClientConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		clientConfig, err := httpServer.server.CreateClientConfig()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		w.Write([]byte(clientConfig))
+	} else {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
