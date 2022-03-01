@@ -62,21 +62,21 @@ func main() {
 		case "run":
 			startServer(*serverConfigFlag)
 			if len(os.Args) == 3 {
-				log.Println("Running 1")
+				log.Println("Running Server")
 				err := runFlag.Parse(os.Args[2:])
 				if err != nil {
 					log.Fatal(err)
 				}
 				startServer(*serverConfigFlag)
 			} else {
-				log.Println("Running 2")
+				log.Println("Running server with default settings")
 				startServer("")
 			}
 		default:
 			flag.Usage()
 		}
 	} else {
-		log.Println("Running 3")
+		log.Println("Running server with default config")
 		startServer("")
 	}
 }
