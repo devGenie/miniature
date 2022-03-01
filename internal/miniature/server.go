@@ -480,17 +480,19 @@ func (server *Server) listenTLS() {
 }
 
 func (server *Server) handleTLS(conn net.Conn) {
-	log.Println("Hadling tls")
+	log.Println("Handling tls")
 	defer conn.Close()
 	buffer := make([]byte, 512)
 	for {
 		_, err := conn.Read(buffer)
 		if err != nil {
+			log.Println(err)
 			break
 		}
 		packet := new(utilities.Packet)
 		err = utilities.Decode(packet, buffer)
 		if err != nil {
+			log.Println(err)
 			break
 		}
 		if packet.Flag == utilities.HANDSHAKE {
