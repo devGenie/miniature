@@ -54,7 +54,6 @@ type Server struct {
 	gatewayIfce    string
 	network        *net.IPNet
 	socket         *net.UDPConn
-	ipPool         []string
 	Config         ServerConfig
 	connectionPool *Pool
 	waiter         sync.WaitGroup

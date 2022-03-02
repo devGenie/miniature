@@ -5,6 +5,7 @@ go 1.12
 require (
 	github.com/aead/ecdh v0.2.0
 	github.com/gizak/termui/v3 v3.1.0 // indirect
+	github.com/go-chi/chi v1.5.4 // indirect
 	github.com/google/uuid v1.2.0 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.5
 	github.com/pierrec/lz4 v2.6.0+incompatible
