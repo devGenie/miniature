@@ -54,7 +54,7 @@ go build ./cmd/client
 ./client -config=/etc/miniature/config.yml
 ```
 
-`-config` is used to specify the path to the  client configuration file. If this command line switch is not provided, the client will use the default path which is `/etc/miniature/config.yml`. The config file takes the following shape:
+`-config` is used to specify the path to the  client configuration file. If this command line switch is not provided, the client will use the default path which is `/etc/miniature/config.yml`. The config file looks like an example below:
 
 ```
 serveraddress: 172.2.2.2
@@ -113,13 +113,33 @@ privatekey: |
     -----END RSA PRIVATE KEY-----
 ```
 
-This config file can be got from running `./server newclient --config=/etc/miniature/config.yml`
+To generate a config file like the one above, run `./server newclient --config=/etc/miniature/config.yml`
 
 **Note**
 
 At the moment, the VPN server runs on only linux, plans are to port it to windows sometime. At the moment, it is not possible to port it to OSX because of the limitations in configuring the tun interfaces
 
 The client has only been tested only on linux at the moment.Plans are to port it to both osx and windows in the future.
+
+**Note**
+
+Development has been done on Linux, if you don"t have a linux machine, you can use docker containers to run a dev environment. Right now, it is not possible to develop the server on OSX. This has not been tested on windows yet.
+
+The docker containers have to be run in privelege mode to make this work as expected.
+
+```
+docker network create miniature 
+
+docker build -t miniature .
+
+docker run -dit --mount type=bind,source="$(pwd)",target=/miniature --privileged --name miniature-server --network miniature miniature
+
+//mount the current working directory to so that the changes made in you code editor are available inside the docker containers
+
+docker run -dit --mount type=bind,source="$(pwd)",target=/miniature --privileged --name miniature-client1 --network miniature miniature
+
+docker run -dit --mount type=bind,source="$(pwd)",target=/miniature --privileged --name miniature-client2 --network miniature miniature
+```
 
 **Todo**
 
