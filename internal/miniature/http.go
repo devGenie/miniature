@@ -5,6 +5,9 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 )
 
 // HTTPServer ...
@@ -26,12 +29,17 @@ type Stats struct {
 
 func startHTTPServer(miniatureServer *Server) error {
 	defer miniatureServer.waiter.Done()
+	router := chi.NewRouter()
+	router.Use(middleware.Recoverer)
+
 	httpServer := new(HTTPServer)
 	httpServer.server = miniatureServer
-	http.HandleFunc("/stats", httpServer.handleStats)
-	http.HandleFunc("/client", httpServer.createClientConfig)
+
+	router.Get("/stats", httpServer.handleStats)
+	router.Post("/client", httpServer.createClientConfig)
+
 	log.Println("Server started at 8080")
-	err := http.ListenAndServe("127.0.0.1:8080", nil)
+	err := http.ListenAndServe("127.0.0.1:8080", router)
 	return err
 }
 
