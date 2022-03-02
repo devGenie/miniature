@@ -5,6 +5,9 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 )
 
 // HTTPServer ...
@@ -22,6 +25,22 @@ type Stats struct {
 	ConnectionsOut          int    `json:"ConnectionsOut"`
 	Peers                   int    `json:"Peers"`
 	AvailableSlots          int    `json:"AvailableSlots"`
+}
+
+func startHTTPServer(miniatureServer *Server) error {
+	defer miniatureServer.waiter.Done()
+	router := chi.NewRouter()
+	router.Use(middleware.Recoverer)
+
+	httpServer := new(HTTPServer)
+	httpServer.server = miniatureServer
+
+	router.Get("/stats", httpServer.handleStats)
+	router.Post("/client", httpServer.createClientConfig)
+
+	log.Println("Server started at 8080")
+	err := http.ListenAndServe("127.0.0.1:8080", router)
+	return err
 }
 
 func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -44,12 +63,14 @@ func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func startHTTPServer(miniatureServer *Server) error {
-	defer miniatureServer.waiter.Done()
-	httpServer := new(HTTPServer)
-	httpServer.server = miniatureServer
-	http.HandleFunc("/stats", httpServer.handleStats)
-	log.Println("Server started at 8080")
-	err := http.ListenAndServe("127.0.0.1:8080", nil)
-	return err
+func (httpServer *HTTPServer) createClientConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		clientConfig, err := httpServer.server.CreateClientConfig()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		w.Write([]byte(clientConfig))
+	} else {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
