@@ -198,6 +198,7 @@ func (server *Server) Run(config ServerConfig) {
 			err = server.generateServerCerts()
 			if err != nil {
 				fmt.Println(err)
+				fmt.Println(server.gatewayIfce)
 				log.Println("Failed to create server certificate files")
 				return
 			}
