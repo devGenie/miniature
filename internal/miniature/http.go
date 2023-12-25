@@ -28,6 +28,10 @@ type Stats struct {
 	AvailableSlots          int    `json:"AvailableSlots"`
 }
 
+type ClientResponse struct {
+	Cert []byte
+}
+
 func startHTTPServer(miniatureServer *Server) error {
 	defer miniatureServer.waiter.Done()
 	router := chi.NewRouter()
@@ -37,10 +41,10 @@ func startHTTPServer(miniatureServer *Server) error {
 	httpServer.server = miniatureServer
 
 	router.Get("/stats", httpServer.handleStats)
-	router.Post("/client", httpServer.createClientConfig)
+	router.Post("/client/auth", httpServer.createClientConfig)
 
 	log.Println("Server started at 8080")
-	err := http.ListenAndServe("127.0.0.1:8080", router)
+	err := http.ListenAndServe("0.0.0.0:8080", router)
 	return err
 }
 
@@ -70,8 +74,13 @@ func (httpServer *HTTPServer) createClientConfig(w http.ResponseWriter, r *http.
 		clientConfig, err := httpServer.server.CreateClientConfig()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		} else {
+			clientResponse := new(ClientResponse)
+			clientResponse.Cert = []byte(clientConfig)
+			jsonResponse, _ := json.Marshal(clientResponse)
+			w.Write(jsonResponse)
 		}
-		w.Write([]byte(clientConfig))
 	} else {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
