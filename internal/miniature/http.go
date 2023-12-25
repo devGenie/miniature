@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/rickb777/date/period"
 )
 
 // HTTPServer ...
@@ -55,7 +56,8 @@ func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request
 		serverStats.Peers = httpServer.server.connectionPool.ConnectedPeersCount()
 		serverStats.AvailableSlots = httpServer.server.connectionPool.AvailableAddressesCount()
 		timeStarted := time.Unix(0, httpServer.server.metrics.TimeStarted)
-		serverStats.TimeElapsed = time.Since(timeStarted).String()
+		timeElapsed, _ := period.NewOf(time.Since(timeStarted))
+		serverStats.TimeElapsed = timeElapsed.Format()
 		jsonResponse, _ := json.Marshal(serverStats)
 		w.Write(jsonResponse)
 	} else {

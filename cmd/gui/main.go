@@ -20,7 +20,7 @@ func main() {
 	defer ui.Close()
 	termWidth, termHeight := ui.TerminalDimensions()
 	title := widgets.NewParagraph()
-	title.Text = "Welcome to Miniatureby DevGenie, press q to quit"
+	title.Text = "Welcome to Miniature by DevGenie, press q to quit. Total runtime: n/a"
 	title.TextStyle.Modifier = ui.ModifierBold
 	title.WrapText = true
 	title.TextStyle.Fg = ui.ColorGreen
@@ -30,48 +30,46 @@ func main() {
 	title.PaddingRight = 1
 	title.PaddingLeft = 1
 
+	info := widgets.NewList()
+	info.BorderStyle.Fg = ui.ColorCyan
+	info.Title = "Info"
+	info.TitleStyle.Fg = ui.ColorGreen
 
-	systemStats := widgets.NewList()
-	systemStats.BorderStyle.Fg = ui.ColorCyan
-	systemStats.Title = "System"
-	systemStats.TitleStyle.Fg = ui.ColorGreen
+	networkDataIn := widgets.NewSparkline()
+	networkDataIn.Title = "Bytes in"
+	networkDataIn.Data = make([]float64, 0)
+	networkDataIn.LineColor = ui.ColorGreen
+	networkDataIn.TitleStyle.Modifier = ui.ModifierBold
+	networkDataIn.TitleStyle.Fg = ui.ColorGreen
 
-	peerStats := widgets.NewList()
-	peerStats.BorderStyle.Fg = ui.ColorCyan
-	peerStats.Title = "Peers"
-	peerStats.TitleStyle.Fg = ui.ColorGreen
+	networkDataOut := widgets.NewSparkline()
+	networkDataOut.Title = "Bytes out"
+	networkDataOut.Data = make([]float64, 0)
+	networkDataOut.LineColor = ui.ColorCyan
+	networkDataOut.TitleStyle.Modifier = ui.ModifierBold
+	networkDataOut.TitleStyle.Fg = ui.ColorCyan
 
-	networkStats := widgets.NewList()
-	networkStats.BorderStyle.Fg = ui.ColorCyan
-	networkStats.Title = "Network"
-	networkStats.TitleStyle.Fg = ui.ColorGreen
-
-	networkData := widgets.NewSparkline()
-	networkData.Title = "Peers connected: 0"
-	networkData.LineColor = ui.ColorCyan
-	networkData.Data = make([]float64, 1)
-	networkData.TitleStyle.Modifier = ui.ModifierBold
-	networkData.TitleStyle.Fg = ui.ColorGreen
-
-	sparklineGroup := widgets.NewSparklineGroup(networkData)
+	sparklineGroup := widgets.NewSparklineGroup(networkDataIn, networkDataOut)
+	sparklineGroup.Title = "Network stats"
 
 	grid := ui.NewGrid()
 	grid.SetRect(0, 0, termWidth, termHeight)
 
 	grid.Set(
-		ui.NewRow(0.4/6,title),
+		ui.NewRow(0.4/6, title),
 		ui.NewRow(5.6/6,
 			ui.NewCol(1.0/4,
-				ui.NewRow(2.0/6,systemStats),
-				ui.NewRow(2.0/6,peerStats),
-				ui.NewRow(2.0/6,networkStats),
+				ui.NewRow(2.0/6, info),
 			),
 			ui.NewCol(3.0/4, sparklineGroup),
 		),
 	)
 
 	ui.Render(grid)
-	tickerCount := 1
+	lastConnIn := new(int)
+	lastConnOut := new(int)
+	*lastConnIn = 0
+	*lastConnOut = 0
 	uiEvents := ui.PollEvents()
 	ticker := time.NewTicker(time.Second).C
 	for {
@@ -89,21 +87,18 @@ func main() {
 			}
 		case <-ticker:
 			usageStats := callStats()
-			generalStatsRows := []string{fmt.Sprintf("Available: %d", usageStats.AvailableSlots),
-										fmt.Sprintf("Total: %d", usageStats.AvailableSlots),
-										fmt.Sprintf("Connected: %d", usageStats.Peers),
-										fmt.Sprintf("Bytes in: %d", usageStats.ConnectionsIn),
-										fmt.Sprintf("Bytes out: %d", usageStats.ConnectionsOut),
-									}
-			
-			systemStatsRows := []string{fmt.Sprintf("Running time: %s", usageStats.TimeElapsed),
+			title.Text = fmt.Sprintf("Welcome to Miniature by DevGenie, press q to quit. Total runtime: %s", usageStats.TimeElapsed)
+			generalStatsRows := []string{
+				fmt.Sprintf("Available connections: %d", usageStats.AvailableSlots),
+				fmt.Sprintf("Peers connected: %d", usageStats.Peers),
+				fmt.Sprintf("Total bytes in: %d", usageStats.ConnectionsIn),
+				fmt.Sprintf("Total bytes out: %d", usageStats.ConnectionsOut),
 			}
-			networkData.Data = append(networkData.Data, float64(usageStats.Peers))
-			peerStats.Rows = generalStatsRows
-			systemStats.Rows = systemStatsRows
+
+			networkDataIn.Data = append(networkDataIn.Data, float64(usageStats.ConnectionsIn))
+			networkDataOut.Data = append(networkDataOut.Data, float64(usageStats.ConnectionsOut))
+			info.Rows = generalStatsRows
 			ui.Render(grid)
-			tickerCount++
-			networkData.Title = fmt.Sprintf("Peers Connected: %d %s", tickerCount, termWidth)
 		}
 	}
 }
