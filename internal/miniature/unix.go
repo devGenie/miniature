@@ -17,6 +17,8 @@ func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface st
 	defer tmpFile.Close()
 	pfctl := []byte(command)
 	_, err = tmpFile.Write(pfctl)
+	fmt.Println(string(pfctl))
+	fmt.Println(string(command))
 	if err != nil {
 		log.Fatal("Failed to write to temporary file", err)
 		return err

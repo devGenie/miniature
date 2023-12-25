@@ -264,8 +264,9 @@ func (client *Client) handleIncomingConnections() {
 				log.Printf("Error decrypting data from the server \t Error : %s \n", err)
 				continue
 			}
-
+			fmt.Println(flag)
 			if flag == utilities.SESSION {
+				fmt.Println("received session")
 				go client.writeToIfce(decryptedPayload)
 			} else {
 				log.Println("Expected headers not found")
@@ -320,9 +321,6 @@ func (client *Client) handleOutgoingConnections() {
 					log.Println("Error compressing:", err)
 					return
 				}
-				log.Printf("Sending %d bytes to %s \n", len(compressedPacket), "server")
-				log.Printf("Version %d, Protocol  %d \n", "server")
-
 				_, err = client.conn.Write(compressedPacket)
 				if err != nil {
 					fmt.Println("Failed to write to tunnel", err)
@@ -381,12 +379,12 @@ func (client *Client) setUpDNS(resolvers []string) error {
 	for _, resolver := range resolvers {
 		content += fmt.Sprintf("nameserver %s\n", resolver)
 	}
-	return ioutil.WriteFile("/etc/resolv.conf", []byte(content), 0644)
+	return os.WriteFile("/etc/resolv.conf", []byte(content), 0644)
 }
 
 // ResetDNS resets the resolv.conf file to the one before the vpn client was started
 func (client *Client) ResetDNS() error {
-	err := ioutil.WriteFile("/etc/resolv.conf", []byte(client.resolveFile), 0644)
+	err := os.WriteFile("/etc/resolv.conf", []byte(client.resolveFile), 0644)
 	if err != nil {
 		log.Println("Failed to restore /etc/resolv.conf file, restore the file manually by copying the contents below and pasting them into /etc/resolve.conf file")
 		fmt.Println(client.resolveFile)

@@ -365,13 +365,13 @@ func (server *Server) generateServerCerts() error {
 
 	serverCertFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
 	serverPrivatekeyPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.pem")
-	err = ioutil.WriteFile(serverCertFile, certBytes, 0644)
+	err = os.WriteFile(serverCertFile, certBytes, 0644)
 	if err != nil {
 		log.Println("Failed to write Certificate file")
 		return err
 	}
 
-	err = ioutil.WriteFile(serverPrivatekeyPath, privateKeyBytes, 0644)
+	err = os.WriteFile(serverPrivatekeyPath, privateKeyBytes, 0644)
 	if err != nil {
 		log.Println("Failed to write private key")
 		return err
@@ -582,10 +582,10 @@ func (server *Server) listenAndServe() {
 			headerData := decompressedData[len(decompressedData)-5:]
 			decompressedData = decompressedData[:len(decompressedData)-5]
 			srcIP := net.IP(headerData[:4])
-			fmt.Println("Received from: ", srcIP)
 			headerFlag := headerData[4]
 			peer := server.connectionPool.GetPeer(srcIP.String())
 			if peer == nil {
+				fmt.Println("Failed to get peer")
 				return
 			}
 
@@ -634,6 +634,7 @@ func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
 	for {
+		fmt.Println(server.tunInterface.Mtu)
 		buffer := make([]byte, server.tunInterface.Mtu)
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
