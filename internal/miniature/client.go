@@ -317,7 +317,6 @@ func (client *Client) handleOutgoingConnections() {
 				encryptedData = append(encryptedData, clintIP...)
 				encryptedData = append(encryptedData, utilities.SESSION)
 				compressedPacket, err := Compress(encryptedData)
-				fmt.Println("Sending")
 				if err != nil {
 					log.Println("Error compressing:", err)
 					return

@@ -37,7 +37,7 @@ func (cert *Cert) GenerateTemplate(privateKey *rsa.PrivateKey) (certificateTempl
 	randomInteger64 := int64(randomInteger)
 	subjectKeyID := HashBigInt(privateKey.N)
 
-	ipAddress := net.ParseIP("164.92.160.186")
+	ipAddress := net.ParseIP(cert.IPAddress)
 
 	template := &x509.Certificate{
 		IsCA:         cert.IsCA,
