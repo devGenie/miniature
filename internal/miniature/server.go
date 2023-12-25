@@ -115,11 +115,13 @@ func (server *Server) Run(config ServerConfig) {
 	command := fmt.Sprintf("route add %s dev %s", network.String(), ifce.Ifce.Name())
 	err = utilities.RunCommand("ip", command)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
 	gatewayIfce, _, err := utilities.GetDefaultGateway()
 	if err != nil {
+		fmt.Println("Failed to get default interface", gatewayIfce)
 		return
 	}
 
@@ -381,11 +383,13 @@ func (server *Server) generateServerCerts() error {
 func (server *Server) generateCerts(certPath string, privatekeyPath string) (privateKey []byte, cert []byte, err error) {
 	serverCertificate, err := tls.LoadX509KeyPair(certPath, privatekeyPath)
 	if err != nil {
+		fmt.Println(err)
 		return nil, nil, err
 	}
 
 	ca, err := x509.ParseCertificate(serverCertificate.Certificate[0])
 	if err != nil {
+		fmt.Println(err)
 		return nil, nil, err
 	}
 	clientCertTemplate := *ca
