@@ -11,7 +11,6 @@ import (
 	"encoding/gob"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -247,7 +246,7 @@ func (server *Server) CreateClientConfig() (yamlConfiguration string, errorMessa
 		return "", err
 	}
 
-	caCertBytes, err := ioutil.ReadFile(certPath)
+	caCertBytes, err := os.ReadFile(certPath)
 	if err != nil {
 		return "", err
 	}
@@ -447,7 +446,7 @@ func (server *Server) listenTLS() {
 	crtFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
 	privateKey := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.pem")
 
-	certPem, err := ioutil.ReadFile(caFile)
+	certPem, err := os.ReadFile(caFile)
 	if err != nil {
 		log.Println(err)
 	}
@@ -600,6 +599,7 @@ func (server *Server) listenAndServe() {
 			case utilities.HEARTBEAT:
 				server.handleHeartbeat(decryptedPayload)
 			case utilities.SESSION:
+				fmt.Println("Handling session from ", peer.IP, peer.Addr.Port)
 				server.handleConnection(peer, decryptedPayload)
 			default:
 				log.Println("Expected headers not found")
