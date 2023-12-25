@@ -564,7 +564,6 @@ func (server *Server) listenAndServe() {
 	for {
 		inputBytes := make([]byte, 1483)
 		length, clientConn, err := server.socket.ReadFromUDP(inputBytes)
-		fmt.Println("Read from", clientConn.IP)
 		go server.metrics.Update(length, 0, 0, 0)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
@@ -607,7 +606,6 @@ func (server *Server) listenAndServe() {
 }
 
 func (server *Server) handleConnection(peer *Peer, packet []byte) {
-	fmt.Println("Handling session")
 	server.connectionPool.Update(peer.IP, *peer)
 	_, err := server.tunInterface.Ifce.Write(packet)
 	if err != nil {
