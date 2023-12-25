@@ -1,0 +1,10 @@
+certificatesdirectory: /etc/miniature/certs
+
+network: 10.2.0.0/24
+
+listeningport: 4321
+
+publicip: 172.18.0.2
+
+dnsresolvers:
+  - 8.8.8.8
