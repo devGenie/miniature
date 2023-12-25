@@ -634,7 +634,6 @@ func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
 	for {
-		fmt.Println(server.tunInterface.Mtu)
 		buffer := make([]byte, server.tunInterface.Mtu)
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
@@ -664,6 +663,7 @@ func (server *Server) readIfce() {
 						return
 					}
 
+					fmt.Println("Writting to: ", peer.Addr)
 					_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
 					if err != nil {
 						fmt.Println(err)
