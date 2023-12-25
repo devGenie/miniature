@@ -83,6 +83,8 @@ type ServerConfig struct {
 // Run starts the VPN server by passing a configuration object
 // The configuration object contains attributes needed to run the server
 func (server *Server) Run(config ServerConfig) {
+	fmt.Println(config.PublicIP)
+	fmt.Println(config)
 	server.Config = config
 	ifce, err := utilities.NewInterface()
 	if err != nil {
@@ -199,6 +201,7 @@ func (server *Server) Run(config ServerConfig) {
 			if err != nil {
 				fmt.Println(err)
 				fmt.Println(server.gatewayIfce)
+				fmt.Println(server)
 				log.Println("Failed to create server certificate files")
 				return
 			}
