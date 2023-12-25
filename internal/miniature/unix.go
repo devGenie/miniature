@@ -2,7 +2,6 @@ package miniature
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -13,7 +12,7 @@ import (
 // SetDarwinClient sets up IP tables on Darwin hosts
 func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface string, tunnelIP string, serverIP string, dnsServer string) error {
 	command := fmt.Sprintf("nat on %s from %s to any -> (%s) \n", defaultGWIface, tunnelIP, defaultGWIface)
-	tmpFile, err := ioutil.TempFile(os.TempDir(), "minature-")
+	tmpFile, err := os.CreateTemp(os.TempDir(), "minature-")
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 	pfctl := []byte(command)
@@ -22,12 +21,11 @@ func SetDarwinClient(defaultGWIface string, defaultGWAddr string, tunnelIface st
 		log.Fatal("Failed to write to temporary file", err)
 		return err
 	}
-	fmt.Println(command)
 
 	command = fmt.Sprintf("-f %s", tmpFile.Name())
 	err = utilities.RunCommand("pfctl", command)
 	if err != nil {
-		tmpFile.Close()
+		fmt.Println(err)
 		return err
 	}
 

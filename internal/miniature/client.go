@@ -320,8 +320,8 @@ func (client *Client) handleOutgoingConnections() {
 					log.Println("Error compressing:", err)
 					return
 				}
-				// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
-				// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
+				log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
+				log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
 
 				_, err = client.conn.Write(compressedPacket)
 				if err != nil {

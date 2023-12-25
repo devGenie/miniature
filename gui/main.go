@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -13,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	"github.com/aead/ecdh"
 	"github.com/devgenie/miniature/internal/miniature"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -69,6 +71,7 @@ func main() {
 
 func connectClient(serverAddress, username, password string) error {
 	client := &http.Client{}
+	gob.Register(ecdh.Point{})
 	serverAddr := fmt.Sprintf("http://%s:8080/client/auth", serverAddress)
 	reqBody := &miniature.User{
 		Username: username,

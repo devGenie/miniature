@@ -582,6 +582,7 @@ func (server *Server) listenAndServe() {
 			headerData := decompressedData[len(decompressedData)-5:]
 			decompressedData = decompressedData[:len(decompressedData)-5]
 			srcIP := net.IP(headerData[:4])
+			fmt.Println("Received from: ", srcIP)
 			headerFlag := headerData[4]
 			peer := server.connectionPool.GetPeer(srcIP.String())
 			if peer == nil {
