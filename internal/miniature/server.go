@@ -564,6 +564,7 @@ func (server *Server) listenAndServe() {
 	for {
 		inputBytes := make([]byte, 1483)
 		length, clientConn, err := server.socket.ReadFromUDP(inputBytes)
+		fmt.Println("Read from", clientConn.IP)
 		go server.metrics.Update(length, 0, 0, 0)
 		if err != nil || length == 0 {
 			log.Println("Error: ", err)
@@ -642,7 +643,7 @@ func (server *Server) readIfce() {
 			if length > -4 {
 				header, err := ipv4.ParseHeader(data)
 				if err != nil {
-					log.Println(err)
+					log.Println("Error parsing header", err)
 					return
 				}
 				peer := server.connectionPool.GetPeer(header.Dst.String())
