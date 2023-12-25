@@ -197,6 +197,7 @@ func (server *Server) Run(config ServerConfig) {
 			log.Println("Could not find one or more server certificate files, creating fresh ones")
 			err = server.generateServerCerts()
 			if err != nil {
+				fmt.Println(err)
 				log.Println("Failed to create server certificate files")
 				return
 			}
