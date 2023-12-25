@@ -607,6 +607,7 @@ func (server *Server) listenAndServe() {
 }
 
 func (server *Server) handleConnection(peer *Peer, packet []byte) {
+	fmt.Println("Handling session")
 	server.connectionPool.Update(peer.IP, *peer)
 	_, err := server.tunInterface.Ifce.Write(packet)
 	if err != nil {
@@ -632,6 +633,7 @@ func (server *Server) readIfce() {
 	defer server.waiter.Done()
 	log.Println("Handling outgoing connection")
 	for {
+		fmt.Println("Received data")
 		buffer := make([]byte, server.tunInterface.Mtu)
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
