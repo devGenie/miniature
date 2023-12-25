@@ -538,11 +538,9 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	handshakePacket.ClientIP = clientIP
 	handshakePacket.ServerPublic = serverPublicKey
 	handshakePacket.DNSResolvers = server.Config.DNSResolvers
-	fmt.Println("DNS resolvers", server.Config.DNSResolvers)
 
 	handshakePacketBytes, err := utilities.Encode(handshakePacket)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	packetData := utilities.Packet{Flag: utilities.HANDSHAKE_ACCEPTED, Payload: handshakePacketBytes}
@@ -599,7 +597,7 @@ func (server *Server) listenAndServe() {
 			case utilities.HEARTBEAT:
 				server.handleHeartbeat(decryptedPayload)
 			case utilities.SESSION:
-				server.handleConnection(peer, decryptedPayload)
+				go server.handleConnection(peer, decryptedPayload)
 			default:
 				log.Println("Expected headers not found")
 			}
