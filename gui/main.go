@@ -17,11 +17,6 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-type User struct {
-	Name     string `json:"name"`
-	Password string `json:"password"`
-}
-
 type UserResponse struct {
 	Name     string `json:"name"`
 	Password string `json:"password"`
@@ -35,17 +30,23 @@ func main() {
 	serverAddress := widget.NewEntry()
 	serverAddress.SetPlaceHolder("192.0.0.2 or http://xyz.com")
 
-	accessTokenLabel := widget.NewLabel("Access token:")
-	accessToken := widget.NewEntry()
-	accessToken.SetPlaceHolder("Access token")
+	usernameLabel := widget.NewLabel("Username:")
+	username := widget.NewEntry()
+	username.SetPlaceHolder("Username")
+
+	passwordLabel := widget.NewLabel("Password:")
+	password := widget.NewPasswordEntry()
+	password.SetPlaceHolder("Password")
 
 	connectButton := widget.NewButton("Connect", nil)
 
 	authArea := container.New(layout.NewFormLayout(),
 		serverAddresslabel,
 		serverAddress,
-		accessTokenLabel,
-		accessToken)
+		usernameLabel,
+		username,
+		passwordLabel,
+		password)
 	w.SetContent(container.New(layout.NewVBoxLayout(),
 		authArea,
 		connectButton))
@@ -53,7 +54,7 @@ func main() {
 
 	connectButton.OnTapped = func() {
 		serverAddress.Disable()
-		accessToken.Disable()
+		password.Disable()
 		loadingLabel := widget.NewLabel("connecting ...")
 		cancelButton := widget.NewButton("Cancel", nil)
 		popup := widget.NewModalPopUp(container.NewVBox(loadingLabel, cancelButton), w.Canvas())
@@ -61,35 +62,40 @@ func main() {
 		cancelButton.OnTapped = func() {
 			popup.Hide()
 		}
-		connectClient(serverAddress.Text, accessToken.Text)
+		connectClient(serverAddress.Text, username.Text, password.Text)
 	}
 	w.ShowAndRun()
 }
 
-func connectClient(serverAddress, accessToken string) error {
+func connectClient(serverAddress, username, password string) error {
 	client := &http.Client{}
 	serverAddr := fmt.Sprintf("http://%s:8080/client/auth", serverAddress)
-	reqBody := &User{
-		Name:     "abc",
-		Password: accessToken,
+	reqBody := &miniature.User{
+		Username: username,
+		Password: password,
 	}
 	payloadBuf := new(bytes.Buffer)
 	json.NewEncoder(payloadBuf).Encode(reqBody)
-
+	fmt.Println(payloadBuf)
 	req, err := http.NewRequest("POST", serverAddr, payloadBuf)
 	if err != nil {
 		fmt.Print(err.Error())
+		return err
 	}
+
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Print(err.Error())
+		return err
 	}
+
 	defer resp.Body.Close()
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Print(err.Error())
+		return err
 	}
 	var clientResponse miniature.ClientResponse
 	json.Unmarshal(bodyBytes, &clientResponse)
@@ -100,7 +106,7 @@ func connectClient(serverAddress, accessToken string) error {
 		return err
 	}
 	vpnClient := new(miniature.Client)
-	clientConfig.ServerAddress = "localhost"
+	clientConfig.ServerAddress = serverAddress
 	err = vpnClient.Run(*clientConfig)
 	if err != nil {
 		log.Fatal(err)
