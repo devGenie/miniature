@@ -1,6 +1,6 @@
 certificatesdirectory: /etc/miniature/certs
 
-network: 10.2.0.0/24
+network: 10.114.0.0/24
 
 listeningport: 4321
 
