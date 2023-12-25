@@ -17,7 +17,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+require github.com/mattn/go-sqlite3 v1.14.19 // indirect
+
 require (
+	fyne.io/fyne v1.4.3
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/frankban/quicktest v1.14.2 // indirect
 	github.com/fredbi/uri v0.0.0-20181227131451-3dcfdacbaaf3 // indirect
@@ -40,4 +43,5 @@ require (
 	golang.org/x/image v0.0.0-20200430140353-33d19683fad8 // indirect
 	golang.org/x/sys v0.14.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0
 )
