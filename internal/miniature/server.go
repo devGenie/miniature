@@ -599,7 +599,6 @@ func (server *Server) listenAndServe() {
 			case utilities.HEARTBEAT:
 				server.handleHeartbeat(decryptedPayload)
 			case utilities.SESSION:
-				fmt.Println("Handling session from ", peer.IP, peer.Addr.Port)
 				server.handleConnection(peer, decryptedPayload)
 			default:
 				log.Println("Expected headers not found")
