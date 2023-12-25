@@ -31,34 +31,31 @@ func main() {
 	serverConfigFlag := runFlag.String("config", "/etc/miniature/config.yml", "Server configuration file")
 
 	clientConfig := flag.NewFlagSet("newclient", flag.ExitOnError)
-	configFile := clientConfig.String("config", "/etc/miniature/config.yml", "Server Configuration File")
+	username := clientConfig.String("username", "", "Username")
+	password := clientConfig.String("password", "", "Password")
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "newclient":
-			serverConfig := new(miniature.ServerConfig)
-			if len(os.Args) == 3 {
+			if len(os.Args) == 4 {
 				err := clientConfig.Parse(os.Args[2:])
 				if err != nil {
 					log.Fatal(err)
 				}
-				serverConfigYamlPath := *configFile
-				err = utilities.FileToYaml(serverConfigYamlPath, serverConfig)
+
+				db := new(miniature.DatabaseObject)
+				db.Init()
+				vpnUser := new(miniature.User)
+				vpnUser.Username = *username
+				vpnUser.Password = *password
+
+				err = db.AddUser(vpnUser)
 				if err != nil {
 					log.Fatal(err)
 				}
 			} else {
-				serverConfig.CertificatesDirectory = "/etc/miniature/certs"
-				serverConfig.Network = "10.2.0.0/24"
+				log.Println(os.Args)
 			}
-			server := new(miniature.Server)
-			server.Config = *serverConfig
-			config, err := server.CreateClientConfig()
-			if err != nil {
-				log.Fatal(err)
-				break
-			}
-			log.Println(config)
 		case "run":
 			startServer(*serverConfigFlag)
 			if len(os.Args) == 3 {

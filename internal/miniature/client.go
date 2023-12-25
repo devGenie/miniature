@@ -102,7 +102,8 @@ func (client *Client) AuthenticateUser() error {
 
 	cert, err := tls.X509KeyPair([]byte(client.config.Certificate), []byte(client.config.PrivateKey))
 	if err != nil {
-		panic(err)
+		log.Println(err)
+		return err
 	}
 	conf := &tls.Config{
 		RootCAs:      certPool,

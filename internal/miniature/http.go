@@ -71,8 +71,25 @@ func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request
 
 func (httpServer *HTTPServer) createClientConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
+		decoder := json.NewDecoder(r.Body)
+		user := new(User)
+		err := decoder.Decode(user)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		db := new(DatabaseObject)
+		db.Init()
+		_, err = db.GetUser(user.Username, user.Password)
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
 		clientConfig, err := httpServer.server.CreateClientConfig()
 		if err != nil {
+			log.Println(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		} else {
