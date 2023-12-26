@@ -264,16 +264,15 @@ func (client *Client) handleIncomingConnections() {
 				log.Printf("Error decrypting data from the server \t Error : %s \n", err)
 				continue
 			}
-			fmt.Println(flag)
+
 			if flag == utilities.SESSION {
-				fmt.Println("received session")
 				go client.writeToIfce(decryptedPayload)
 			} else {
 				log.Println("Expected headers not found")
 			}
 		} else {
 			if err := client.AuthenticateUser(); err != nil {
-				log.Println(err)
+				log.Println("Failed to authenticate client", err)
 				return
 			}
 		}
@@ -283,7 +282,7 @@ func (client *Client) handleIncomingConnections() {
 func (client *Client) writeToIfce(packet []byte) {
 	_, err := client.ifce.Ifce.Write(packet)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Failed to write to interface", err)
 		return
 	}
 }
@@ -347,7 +346,7 @@ func (client *Client) HeartBeat() {
 
 	encryptedData, err := codec.Encrypt(client.secret, encodedPeer)
 	if err != nil {
-		log.Println(err)
+		log.Println("Failed to encrypt data", err)
 		return
 	}
 
@@ -410,7 +409,7 @@ func (client *Client) CleanUp() {
 			common.DeleteRoute(route.Destination)
 			err := common.AddRoute(route)
 			if err != nil {
-				log.Println(err)
+				log.Println("Failed to add route", err)
 			}
 		}
 	}

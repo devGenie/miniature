@@ -82,8 +82,6 @@ type ServerConfig struct {
 // Run starts the VPN server by passing a configuration object
 // The configuration object contains attributes needed to run the server
 func (server *Server) Run(config ServerConfig) {
-	fmt.Println(config.PublicIP)
-	fmt.Println(config)
 	server.Config = config
 	ifce, err := utilities.NewInterface()
 	if err != nil {
@@ -93,8 +91,7 @@ func (server *Server) Run(config ServerConfig) {
 
 	_, network, err := net.ParseCIDR(config.Network)
 	if err != nil {
-		log.Println(err)
-		log.Println("Failed to parse cidre")
+		log.Println("Failed to parse cidre", err)
 		return
 	}
 
@@ -106,7 +103,7 @@ func (server *Server) Run(config ServerConfig) {
 	fmt.Println("TunIP", server.connectionPool.NetworkAddress)
 	err = ifce.Configure(ip, ip, 1300)
 	if err != nil {
-		log.Printf("Error: %s \n", err)
+		log.Println("Failed to configure interface:", err)
 		return
 	}
 
@@ -120,7 +117,7 @@ func (server *Server) Run(config ServerConfig) {
 
 	gatewayIfce, _, err := utilities.GetDefaultGateway()
 	if err != nil {
-		fmt.Println("Failed to get default interface", gatewayIfce)
+		fmt.Println("Failed to get default interface", gatewayIfce, err)
 		return
 	}
 
@@ -200,9 +197,6 @@ func (server *Server) Run(config ServerConfig) {
 			log.Println("Could not find one or more server certificate files, creating fresh ones")
 			err = server.generateServerCerts()
 			if err != nil {
-				fmt.Println(err)
-				fmt.Println(server.gatewayIfce)
-				fmt.Println(server)
 				log.Println("Failed to create server certificate files")
 				return
 			}
@@ -609,7 +603,7 @@ func (server *Server) handleConnection(peer *Peer, packet []byte) {
 	server.connectionPool.Update(peer.IP, *peer)
 	_, err := server.tunInterface.Ifce.Write(packet)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Failed to write to tun interface", err)
 		return
 	}
 }
@@ -634,7 +628,7 @@ func (server *Server) readIfce() {
 		buffer := make([]byte, server.tunInterface.Mtu)
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
-			log.Println(err)
+			log.Println("Failed to read from tun interface", err)
 			continue
 		}
 
@@ -656,13 +650,13 @@ func (server *Server) readIfce() {
 
 					compressedPacket, err := Compress(sendPacket)
 					if err != nil {
-						log.Println(err)
+						log.Println("Failed to compress packet", err)
 						return
 					}
 
 					_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
 					if err != nil {
-						fmt.Println(err)
+						fmt.Println("Failed to write to socket", err)
 						return
 					}
 					go server.metrics.Update(0, len(sendPacket), len(compressedPacket), length)

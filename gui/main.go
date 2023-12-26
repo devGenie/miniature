@@ -28,19 +28,20 @@ func main() {
 	a := app.New()
 	w := a.NewWindow("Miniature VPN")
 
-	serverAddresslabel := widget.NewLabel("Server Address:")
+	serverAddresslabel := widget.NewLabel("Server Address")
 	serverAddress := widget.NewEntry()
-	serverAddress.SetPlaceHolder("192.0.0.2 or http://xyz.com")
+	serverAddress.SetPlaceHolder("192.0.0.2 or xyz.com")
 
-	usernameLabel := widget.NewLabel("Username:")
+	usernameLabel := widget.NewLabel("Username")
 	username := widget.NewEntry()
 	username.SetPlaceHolder("Username")
 
-	passwordLabel := widget.NewLabel("Password:")
+	passwordLabel := widget.NewLabel("Password")
 	password := widget.NewPasswordEntry()
 	password.SetPlaceHolder("Password")
 
 	connectButton := widget.NewButton("Connect", nil)
+	connectButtonLayout := container.New(layout.NewGridLayout(3), layout.NewSpacer(), connectButton, layout.NewSpacer())
 
 	authArea := container.New(layout.NewFormLayout(),
 		serverAddresslabel,
@@ -49,23 +50,32 @@ func main() {
 		username,
 		passwordLabel,
 		password)
+
 	w.SetContent(container.New(layout.NewVBoxLayout(),
 		authArea,
-		connectButton))
-	w.Resize(fyne.NewSize(500, 80))
+		connectButtonLayout))
+	w.SetFixedSize(true)
+	w.Resize(fyne.NewSize(400, 80))
 
 	connectButton.OnTapped = func() {
 		serverAddress.Disable()
 		password.Disable()
-		loadingLabel := widget.NewLabel("connecting ...")
+		loadingLabel := widget.NewLabel("Authenticating")
+		loadingBar := widget.NewProgressBarInfinite()
 		cancelButton := widget.NewButton("Cancel", nil)
-		popup := widget.NewModalPopUp(container.NewVBox(loadingLabel, cancelButton), w.Canvas())
+		popup := widget.NewModalPopUp(container.NewVBox(loadingLabel, loadingBar, cancelButton), w.Canvas())
+		popup.Resize(fyne.NewSize(200, 100))
 		popup.Show()
 		cancelButton.OnTapped = func() {
 			popup.Hide()
+			serverAddress.Enable()
+			password.Enable()
 		}
 		connectClient(serverAddress.Text, username.Text, password.Text)
 	}
+
+	w.SetPadded(true)
+	w.CenterOnScreen()
 	w.ShowAndRun()
 }
 
