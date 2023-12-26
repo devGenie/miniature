@@ -100,7 +100,6 @@ func (server *Server) Run(config ServerConfig) {
 	log.Printf("Generated %v ip addresses \n", server.connectionPool.AvailableAddressesCount())
 
 	ip := net.ParseIP(server.connectionPool.NetworkAddress)
-	fmt.Println("TunIP", server.connectionPool.NetworkAddress)
 	err = ifce.Configure(ip, ip, 1300)
 	if err != nil {
 		log.Println("Failed to configure interface:", err)
