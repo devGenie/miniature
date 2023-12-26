@@ -520,7 +520,7 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	serverKEX := ecdh.Generic(elliptic.P256())
 	serverPrivateKey, serverPublicKey, err := serverKEX.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Println(err)
+		log.Println("Failed to generate key", err)
 		return err
 	}
 	peer := server.connectionPool.NewPeer()

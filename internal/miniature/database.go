@@ -52,7 +52,6 @@ func (dbObj *DatabaseObject) GetUser(username, password string) (*User, error) {
 	var user User
 	result := dbObj.DBConn.First(&user, "username = ?", username)
 	if result.Error != nil {
-		log.Println(result.Error)
 		return nil, result.Error
 	}
 
@@ -72,7 +71,5 @@ func hashPassword(password string) (string, error) {
 }
 
 func checkPassword(password string, hashedPassword string) error {
-	fmt.Println(password)
-	fmt.Println(hashedPassword)
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 }

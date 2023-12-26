@@ -82,14 +82,14 @@ func (httpServer *HTTPServer) createClientConfig(w http.ResponseWriter, r *http.
 		db.Init()
 		_, err = db.GetUser(user.Username, user.Password)
 		if err != nil {
-			log.Println(err)
+			log.Println("Failed to fetch user", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		clientConfig, err := httpServer.server.CreateClientConfig()
 		if err != nil {
-			log.Println(err)
+			log.Println("Failed to create client config", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		} else {
