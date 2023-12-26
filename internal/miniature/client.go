@@ -102,7 +102,8 @@ func (client *Client) AuthenticateUser() error {
 
 	cert, err := tls.X509KeyPair([]byte(client.config.Certificate), []byte(client.config.PrivateKey))
 	if err != nil {
-		panic(err)
+		log.Println(err)
+		return err
 	}
 	conf := &tls.Config{
 		RootCAs:      certPool,
@@ -271,7 +272,7 @@ func (client *Client) handleIncomingConnections() {
 			}
 		} else {
 			if err := client.AuthenticateUser(); err != nil {
-				log.Println(err)
+				log.Println("Failed to authenticate client", err)
 				return
 			}
 		}
@@ -281,7 +282,7 @@ func (client *Client) handleIncomingConnections() {
 func (client *Client) writeToIfce(packet []byte) {
 	_, err := client.ifce.Ifce.Write(packet)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Failed to write to interface", err)
 		return
 	}
 }
@@ -319,9 +320,6 @@ func (client *Client) handleOutgoingConnections() {
 					log.Println("Error compressing:", err)
 					return
 				}
-				// log.Printf("Sending %d bytes to %s \n", len(compressedPacket), header.Dst)
-				// log.Printf("Version %d, Protocol  %d \n", header.Version, header.Protocol)
-
 				_, err = client.conn.Write(compressedPacket)
 				if err != nil {
 					fmt.Println("Failed to write to tunnel", err)
@@ -348,7 +346,7 @@ func (client *Client) HeartBeat() {
 
 	encryptedData, err := codec.Encrypt(client.secret, encodedPeer)
 	if err != nil {
-		log.Println(err)
+		log.Println("Failed to encrypt data", err)
 		return
 	}
 
@@ -380,12 +378,12 @@ func (client *Client) setUpDNS(resolvers []string) error {
 	for _, resolver := range resolvers {
 		content += fmt.Sprintf("nameserver %s\n", resolver)
 	}
-	return ioutil.WriteFile("/etc/resolv.conf", []byte(content), 0644)
+	return os.WriteFile("/etc/resolv.conf", []byte(content), 0644)
 }
 
 // ResetDNS resets the resolv.conf file to the one before the vpn client was started
 func (client *Client) ResetDNS() error {
-	err := ioutil.WriteFile("/etc/resolv.conf", []byte(client.resolveFile), 0644)
+	err := os.WriteFile("/etc/resolv.conf", []byte(client.resolveFile), 0644)
 	if err != nil {
 		log.Println("Failed to restore /etc/resolv.conf file, restore the file manually by copying the contents below and pasting them into /etc/resolve.conf file")
 		fmt.Println(client.resolveFile)
@@ -411,7 +409,7 @@ func (client *Client) CleanUp() {
 			common.DeleteRoute(route.Destination)
 			err := common.AddRoute(route)
 			if err != nil {
-				log.Println(err)
+				log.Println("Failed to add route", err)
 			}
 		}
 	}

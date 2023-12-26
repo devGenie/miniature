@@ -11,7 +11,6 @@ import (
 	"encoding/gob"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -92,8 +91,7 @@ func (server *Server) Run(config ServerConfig) {
 
 	_, network, err := net.ParseCIDR(config.Network)
 	if err != nil {
-		log.Println(err)
-		log.Println("Failed to parse cidre")
+		log.Println("Failed to parse cidre", err)
 		return
 	}
 
@@ -102,10 +100,9 @@ func (server *Server) Run(config ServerConfig) {
 	log.Printf("Generated %v ip addresses \n", server.connectionPool.AvailableAddressesCount())
 
 	ip := net.ParseIP(server.connectionPool.NetworkAddress)
-	fmt.Println("TunIP", server.connectionPool.NetworkAddress)
 	err = ifce.Configure(ip, ip, 1300)
 	if err != nil {
-		log.Printf("Error: %s \n", err)
+		log.Println("Failed to configure interface:", err)
 		return
 	}
 
@@ -113,11 +110,13 @@ func (server *Server) Run(config ServerConfig) {
 	command := fmt.Sprintf("route add %s dev %s", network.String(), ifce.Ifce.Name())
 	err = utilities.RunCommand("ip", command)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
 	gatewayIfce, _, err := utilities.GetDefaultGateway()
 	if err != nil {
+		fmt.Println("Failed to get default interface", gatewayIfce, err)
 		return
 	}
 
@@ -240,7 +239,7 @@ func (server *Server) CreateClientConfig() (yamlConfiguration string, errorMessa
 		return "", err
 	}
 
-	caCertBytes, err := ioutil.ReadFile(certPath)
+	caCertBytes, err := os.ReadFile(certPath)
 	if err != nil {
 		return "", err
 	}
@@ -358,13 +357,13 @@ func (server *Server) generateServerCerts() error {
 
 	serverCertFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
 	serverPrivatekeyPath := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.pem")
-	err = ioutil.WriteFile(serverCertFile, certBytes, 0644)
+	err = os.WriteFile(serverCertFile, certBytes, 0644)
 	if err != nil {
 		log.Println("Failed to write Certificate file")
 		return err
 	}
 
-	err = ioutil.WriteFile(serverPrivatekeyPath, privateKeyBytes, 0644)
+	err = os.WriteFile(serverPrivatekeyPath, privateKeyBytes, 0644)
 	if err != nil {
 		log.Println("Failed to write private key")
 		return err
@@ -376,11 +375,13 @@ func (server *Server) generateServerCerts() error {
 func (server *Server) generateCerts(certPath string, privatekeyPath string) (privateKey []byte, cert []byte, err error) {
 	serverCertificate, err := tls.LoadX509KeyPair(certPath, privatekeyPath)
 	if err != nil {
+		fmt.Println(err)
 		return nil, nil, err
 	}
 
 	ca, err := x509.ParseCertificate(serverCertificate.Certificate[0])
 	if err != nil {
+		fmt.Println(err)
 		return nil, nil, err
 	}
 	clientCertTemplate := *ca
@@ -438,7 +439,7 @@ func (server *Server) listenTLS() {
 	crtFile := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.crt")
 	privateKey := fmt.Sprintf("%s/%s", server.Config.CertificatesDirectory, "server.pem")
 
-	certPem, err := ioutil.ReadFile(caFile)
+	certPem, err := os.ReadFile(caFile)
 	if err != nil {
 		log.Println(err)
 	}
@@ -519,7 +520,7 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	serverKEX := ecdh.Generic(elliptic.P256())
 	serverPrivateKey, serverPublicKey, err := serverKEX.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Println(err)
+		log.Println("Failed to generate key", err)
 		return err
 	}
 	peer := server.connectionPool.NewPeer()
@@ -530,11 +531,9 @@ func (server *Server) handleHandshake(conn net.Conn, payload []byte) error {
 	handshakePacket.ClientIP = clientIP
 	handshakePacket.ServerPublic = serverPublicKey
 	handshakePacket.DNSResolvers = server.Config.DNSResolvers
-	fmt.Println("DNS resolvers", server.Config.DNSResolvers)
 
 	handshakePacketBytes, err := utilities.Encode(handshakePacket)
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 	packetData := utilities.Packet{Flag: utilities.HANDSHAKE_ACCEPTED, Payload: handshakePacketBytes}
@@ -576,6 +575,7 @@ func (server *Server) listenAndServe() {
 			headerFlag := headerData[4]
 			peer := server.connectionPool.GetPeer(srcIP.String())
 			if peer == nil {
+				fmt.Println("Failed to get peer")
 				return
 			}
 
@@ -590,7 +590,7 @@ func (server *Server) listenAndServe() {
 			case utilities.HEARTBEAT:
 				server.handleHeartbeat(decryptedPayload)
 			case utilities.SESSION:
-				server.handleConnection(peer, decryptedPayload)
+				go server.handleConnection(peer, decryptedPayload)
 			default:
 				log.Println("Expected headers not found")
 			}
@@ -602,7 +602,7 @@ func (server *Server) handleConnection(peer *Peer, packet []byte) {
 	server.connectionPool.Update(peer.IP, *peer)
 	_, err := server.tunInterface.Ifce.Write(packet)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Failed to write to tun interface", err)
 		return
 	}
 }
@@ -627,7 +627,7 @@ func (server *Server) readIfce() {
 		buffer := make([]byte, server.tunInterface.Mtu)
 		length, err := server.tunInterface.Ifce.Read(buffer)
 		if err != nil {
-			log.Println(err)
+			log.Println("Failed to read from tun interface", err)
 			continue
 		}
 
@@ -635,7 +635,7 @@ func (server *Server) readIfce() {
 			if length > -4 {
 				header, err := ipv4.ParseHeader(data)
 				if err != nil {
-					log.Println(err)
+					log.Println("Error parsing header", err)
 					return
 				}
 				peer := server.connectionPool.GetPeer(header.Dst.String())
@@ -649,13 +649,13 @@ func (server *Server) readIfce() {
 
 					compressedPacket, err := Compress(sendPacket)
 					if err != nil {
-						log.Println(err)
+						log.Println("Failed to compress packet", err)
 						return
 					}
 
 					_, err = server.socket.WriteTo(compressedPacket, peer.Addr)
 					if err != nil {
-						fmt.Println(err)
+						fmt.Println("Failed to write to socket", err)
 						return
 					}
 					go server.metrics.Update(0, len(sendPacket), len(compressedPacket), length)

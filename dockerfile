@@ -1,7 +1,8 @@
-FROM golang:1.12.5-alpine
+FROM golang:1.21.5-alpine
 RUN apk update
 RUN apk upgrade
 RUN apk add git
+RUN apk add sqlite
 RUN apk add iptables
 RUN apk add bash
 RUN apk add curl
@@ -12,3 +13,6 @@ RUN mkdir /miniature
 COPY . /miniature
 WORKDIR /miniature
 RUN export GO111MODULE=on
+EXPOSE 8080
+EXPOSE 443
+EXPOSE 4321/udp

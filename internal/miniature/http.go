@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/rickb777/date/period"
 )
 
 // HTTPServer ...
@@ -27,6 +28,10 @@ type Stats struct {
 	AvailableSlots          int    `json:"AvailableSlots"`
 }
 
+type ClientResponse struct {
+	Cert []byte
+}
+
 func startHTTPServer(miniatureServer *Server) error {
 	defer miniatureServer.waiter.Done()
 	router := chi.NewRouter()
@@ -36,10 +41,10 @@ func startHTTPServer(miniatureServer *Server) error {
 	httpServer.server = miniatureServer
 
 	router.Get("/stats", httpServer.handleStats)
-	router.Post("/client", httpServer.createClientConfig)
+	router.Post("/client/auth", httpServer.createClientConfig)
 
 	log.Println("Server started at 8080")
-	err := http.ListenAndServe("127.0.0.1:8080", router)
+	err := http.ListenAndServe("0.0.0.0:8080", router)
 	return err
 }
 
@@ -55,7 +60,8 @@ func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request
 		serverStats.Peers = httpServer.server.connectionPool.ConnectedPeersCount()
 		serverStats.AvailableSlots = httpServer.server.connectionPool.AvailableAddressesCount()
 		timeStarted := time.Unix(0, httpServer.server.metrics.TimeStarted)
-		serverStats.TimeElapsed = time.Since(timeStarted).String()
+		timeElapsed, _ := period.NewOf(time.Since(timeStarted))
+		serverStats.TimeElapsed = timeElapsed.Format()
 		jsonResponse, _ := json.Marshal(serverStats)
 		w.Write(jsonResponse)
 	} else {
@@ -65,11 +71,33 @@ func (httpServer *HTTPServer) handleStats(w http.ResponseWriter, r *http.Request
 
 func (httpServer *HTTPServer) createClientConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
-		clientConfig, err := httpServer.server.CreateClientConfig()
+		decoder := json.NewDecoder(r.Body)
+		user := new(User)
+		err := decoder.Decode(user)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
-		w.Write([]byte(clientConfig))
+		db := new(DatabaseObject)
+		db.Init()
+		_, err = db.GetUser(user.Username, user.Password)
+		if err != nil {
+			log.Println("Failed to fetch user", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		clientConfig, err := httpServer.server.CreateClientConfig()
+		if err != nil {
+			log.Println("Failed to create client config", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		} else {
+			clientResponse := new(ClientResponse)
+			clientResponse.Cert = []byte(clientConfig)
+			jsonResponse, _ := json.Marshal(clientResponse)
+			w.Write(jsonResponse)
+		}
 	} else {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
